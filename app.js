@@ -53,9 +53,18 @@ function selectedDrug() {
   return state.detailCache[state.selectedSeq] || selectedRow();
 }
 
+function mergeKeepNonEmpty(base, overlay) {
+  const result = { ...base };
+  for (const [key, value] of Object.entries(overlay || {})) {
+    if (value === "" && result[key] && result[key] !== "") continue;
+    result[key] = value;
+  }
+  return result;
+}
+
 function rowWithCachedDetail(row) {
   const detail = state.detailCache[row.itemSeq];
-  return detail ? { ...row, ...detail } : row;
+  return detail ? mergeKeepNonEmpty(row, detail) : row;
 }
 
 function buildSearchParams() {
@@ -88,7 +97,7 @@ async function loadResults({ resetPage = false } = {}) {
     state.listLoading = false;
     render();
 
-    if (state.selectedSeq) loadDetail(state.selectedSeq);
+    preloadAllDetails();
   } catch (error) {
     state.rows = [];
     state.total = 0;
@@ -97,6 +106,64 @@ async function loadResults({ resetPage = false } = {}) {
     state.error = error.message;
     state.notice = "";
     render();
+  }
+}
+
+let preloadGeneration = 0;
+
+async function preloadAllDetails() {
+  const gen = ++preloadGeneration;
+  const seqs = state.rows
+    .map((row) => row.itemSeq)
+    .filter((seq) => seq && !state.detailCache[seq]);
+
+  if (!seqs.length) {
+    if (state.selectedSeq) {
+      render();
+    }
+    return;
+  }
+
+  // Fetch the selected item first for immediate detail panel display
+  if (state.selectedSeq && seqs.includes(state.selectedSeq)) {
+    state.detailLoadingSeq = state.selectedSeq;
+    render();
+    await fetchAndCacheDetail(state.selectedSeq);
+    if (gen !== preloadGeneration) return;
+    if (state.detailLoadingSeq === state.selectedSeq) state.detailLoadingSeq = "";
+    render();
+  }
+
+  // Then fetch the rest concurrently (3 at a time)
+  const remaining = seqs.filter((seq) => !state.detailCache[seq]);
+  const concurrency = 3;
+  let index = 0;
+
+  async function worker() {
+    while (index < remaining.length) {
+      if (gen !== preloadGeneration) return;
+      const currentIndex = index;
+      index += 1;
+      await fetchAndCacheDetail(remaining[currentIndex]);
+      if (gen !== preloadGeneration) return;
+      render();
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, remaining.length) }, worker));
+}
+
+async function fetchAndCacheDetail(itemSeq) {
+  if (state.detailCache[itemSeq]) return;
+  try {
+    const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
+    const payload = await response.json();
+    const row = state.rows.find((r) => r.itemSeq === itemSeq);
+    state.detailCache[itemSeq] = mergeKeepNonEmpty(row, payload);
+  } catch (error) {
+    const row = state.rows.find((r) => r.itemSeq === itemSeq);
+    state.detailCache[itemSeq] = { ...row, detailError: error.message };
   }
 }
 
@@ -113,7 +180,7 @@ async function loadDetail(itemSeq) {
     const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
     const payload = await response.json();
-    state.detailCache[itemSeq] = { ...selectedRow(), ...payload };
+    state.detailCache[itemSeq] = mergeKeepNonEmpty(selectedRow(), payload);
   } catch (error) {
     state.detailCache[itemSeq] = { ...selectedRow(), detailError: error.message };
   } finally {
