@@ -3,6 +3,11 @@ import http from "node:http";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import dns from "node:dns";
+
+if (dns && dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder("ipv4first");
+}
 
 const require = createRequire(import.meta.url);
 const { searchMfds, getMfdsDetail } = require("../lib/mfds.js");
