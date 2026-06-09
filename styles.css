@@ -502,7 +502,17 @@ button:focus-visible {
   width: 100%;
   min-width: 900px;
   border-collapse: collapse;
+  table-layout: fixed;
 }
+
+.result-table th:nth-child(1) { width: 200px; }
+.result-table th:nth-child(2) { width: 110px; }
+.result-table th:nth-child(3) { width: 180px; }
+.result-table th:nth-child(4) { width: 80px; }
+.result-table th:nth-child(5) { width: 90px; }
+.result-table th:nth-child(6) { width: 90px; }
+.result-table th:nth-child(7) { width: 130px; }
+.result-table th:nth-child(8) { width: 120px; }
 
 .result-table th,
 .result-table td {
@@ -521,24 +531,33 @@ button:focus-visible {
   color: #33454d;
   font-size: 12px;
   white-space: nowrap;
-  position: relative;
 }
 
 .col-resize-handle {
   position: absolute;
-  right: -2px;
+  right: 0;
   top: 0;
-  width: 5px;
+  width: 8px;
   height: 100%;
   cursor: col-resize;
-  z-index: 2;
+  z-index: 10;
   background: transparent;
-  transition: background 0.12s;
 }
 
-.col-resize-handle:hover,
-.col-resize-handle.dragging {
-  background: rgba(19, 140, 163, 0.35);
+.col-resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background 0.1s;
+}
+
+.col-resize-handle:hover::after,
+.col-resize-handle.dragging::after {
+  background: var(--teal);
 }
 
 .result-table tr {
@@ -864,4 +883,40 @@ body.table-only .detail-panel {
   .info-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Production/Import Performance styles ── */
+.perf-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.perf-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  min-height: 18px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+}
+
+.tag-prod {
+  background: #eefdf5;
+  border: 1px solid #c6f6d5;
+  color: #22543d;
+}
+
+.tag-imp {
+  background: #ebf8ff;
+  border: 1px solid #bee3f8;
+  color: #2b6cb0;
+}
+
+.perf-amount {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2d3748;
 }

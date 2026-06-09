@@ -67,6 +67,38 @@ function rowWithCachedDetail(row) {
   return detail ? mergeKeepNonEmpty(row, detail) : row;
 }
 
+function formatPerformance(performance) {
+  if (!performance || !performance.rows || !performance.rows.length) {
+    return `<span class="muted">-</span>`;
+  }
+  const sorted = [...performance.rows].sort((a, b) => Number(b.year) - Number(a.year));
+  const latest = sorted[0];
+  const unitText = performance.unit || "";
+  let symbol = "";
+  let suffix = "";
+  if (unitText.includes("달러") || unitText.toLowerCase().includes("dollar") || unitText.includes("$")) {
+    symbol = "$";
+  } else if (unitText.includes("원") || unitText.includes("₩") || unitText.includes("￦")) {
+    symbol = "₩";
+    if (unitText.includes("천원")) {
+      suffix = " (천원)";
+    }
+  } else {
+    symbol = "₩";
+    if (unitText.includes("천원")) {
+      suffix = " (천원)";
+    }
+  }
+  const shortType = performance.type === "생산실적" ? "생산" : performance.type === "수입실적" ? "수입" : "실적";
+  const badgeClass = performance.type === "생산실적" ? "tag-prod" : "tag-imp";
+  return `
+    <div class="perf-cell">
+      <span class="perf-badge ${badgeClass}">${shortType} (${latest.year})</span>
+      <span class="perf-amount">${symbol}${latest.amount}${suffix}</span>
+    </div>
+  `;
+}
+
 function buildSearchParams() {
   const values = Object.fromEntries(new FormData(form).entries());
   const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page) });
@@ -202,17 +234,17 @@ function renderResults() {
   statusText.textContent = state.listLoading ? "목록을 불러오는 중" : state.error || state.notice || "MFDS 실시간 목록";
 
   if (state.listLoading) {
-    resultBody.innerHTML = `<tr><td colspan="7" class="table-message">MFDS 목록을 불러오는 중입니다.</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="8" class="table-message">MFDS 목록을 불러오는 중입니다.</td></tr>`;
     return;
   }
 
   if (state.error) {
-    resultBody.innerHTML = `<tr><td colspan="7" class="table-message error">${escapeHtml(state.error)}</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="8" class="table-message error">${escapeHtml(state.error)}</td></tr>`;
     return;
   }
 
   if (!state.rows.length) {
-    resultBody.innerHTML = `<tr><td colspan="7" class="table-message">검색 결과가 없습니다.</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="8" class="table-message">검색 결과가 없습니다.</td></tr>`;
     return;
   }
 
@@ -243,6 +275,7 @@ function renderResults() {
           <td>${escapeHtml(drug.permitDate || "-")}</td>
           <td>${escapeHtml(drug.atcCode || "-")}</td>
           <td>${escapeHtml(drug.contractManufacturer || "-")}</td>
+          <td>${formatPerformance(drug.performance)}</td>
         </tr>
       `;
     })
@@ -449,12 +482,28 @@ function downloadCsv() {
     ["mainIngredientEng", "주성분영문명"],
     ["additives", "첨가제"],
     ["standardCode", "표준코드"],
-    ["atcCode", "ATC코드"]
+    ["atcCode", "ATC코드"],
+    ["performance", "생산/수입실적"]
   ];
 
   const lines = [
     headers.map(([, label]) => toCsvValue(label)).join(","),
-    ...state.rows.map((drug) => headers.map(([key]) => toCsvValue(drug[key])).join(","))
+    ...state.rows.map((row) => {
+      const drug = rowWithCachedDetail(row);
+      return headers.map(([key]) => {
+        if (key === "performance") {
+          const perf = drug.performance;
+          if (!perf || !perf.rows || !perf.rows.length) return toCsvValue("-");
+          const sorted = [...perf.rows].sort((a, b) => Number(b.year) - Number(a.year));
+          const latest = sorted[0];
+          const unitText = perf.unit || "";
+          let symbol = unitText.includes("달러") || unitText.includes("$") ? "$" : "₩";
+          let suffix = symbol === "₩" && unitText.includes("천원") ? " (천원)" : "";
+          return toCsvValue(`${perf.type} (${latest.year}): ${symbol}${latest.amount}${suffix}`);
+        }
+        return toCsvValue(drug[key]);
+      }).join(",");
+    })
   ];
   const blob = new Blob(["\ufeff", lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -629,26 +678,20 @@ function initColumnResize() {
   const headerRow = table.querySelector("thead tr");
   if (!headerRow) return;
 
-  // Remove old handles if re-initializing
-  headerRow.querySelectorAll(".col-resize-handle").forEach((h) => h.remove());
-
   const ths = Array.from(headerRow.querySelectorAll("th"));
   if (!ths.length) return;
 
-  // Switch to fixed layout for precise control
-  table.style.tableLayout = "fixed";
-
-  // Set initial widths from current rendered widths
-  ths.forEach((th) => {
-    th.style.width = `${th.offsetWidth}px`;
-  });
-
-  // Add handles to all columns except last
+  // Add handles to all columns except the last
   ths.forEach((th, index) => {
     if (index === ths.length - 1) return;
-    const handle = document.createElement("div");
-    handle.className = "col-resize-handle";
-    th.appendChild(handle);
+    
+    // Create handle if it doesn't exist
+    let handle = th.querySelector(".col-resize-handle");
+    if (!handle) {
+      handle = document.createElement("div");
+      handle.className = "col-resize-handle";
+      th.appendChild(handle);
+    }
 
     let startX = 0;
     let startWidth = 0;
@@ -656,20 +699,7 @@ function initColumnResize() {
     let nextStartWidth = 0;
     let colDragging = false;
 
-    handle.addEventListener("mousedown", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      colDragging = true;
-      startX = event.clientX;
-      startWidth = th.offsetWidth;
-      nextTh = ths[index + 1] || null;
-      nextStartWidth = nextTh ? nextTh.offsetWidth : 0;
-      handle.classList.add("dragging");
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    });
-
-    document.addEventListener("mousemove", (event) => {
+    const onMouseMove = (event) => {
       if (!colDragging) return;
       const delta = event.clientX - startX;
       const newWidth = Math.max(60, startWidth + delta);
@@ -679,28 +709,36 @@ function initColumnResize() {
         const newNext = Math.max(40, nextStartWidth - consumed);
         nextTh.style.width = `${newNext}px`;
       }
-    });
+    };
 
-    document.addEventListener("mouseup", () => {
+    const onMouseUp = () => {
       if (!colDragging) return;
       colDragging = false;
       handle.classList.remove("dragging");
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    handle.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      colDragging = true;
+      startX = event.clientX;
+      startWidth = th.offsetWidth;
+      nextTh = ths[index + 1] || null;
+      nextStartWidth = nextTh ? nextTh.offsetWidth : 0;
+      
+      handle.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
     });
   });
 }
 
-// Initialize column resize after first paint
-requestAnimationFrame(() => {
-  setTimeout(initColumnResize, 100);
-});
-
-// Re-initialize column resize when table is re-rendered
-const origRenderResults = renderResults;
-renderResults = function () {
-  origRenderResults();
-  requestAnimationFrame(() => initColumnResize());
-};
-
+initColumnResize();
 loadResults();
