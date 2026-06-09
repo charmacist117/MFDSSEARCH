@@ -1,0 +1,236 @@
+[
+  {
+    "itemSeq": "202601126",
+    "itemName": "참콜드연질캡슐",
+    "itemEngName": "",
+    "appearance": "무색 내지 적색의 투명한 내용물을 함유한 적색의 투명한 타원형 연질캡슐",
+    "shape": "타원형",
+    "entpName": "(주)알피바이오",
+    "entpEngName": "",
+    "contractManufacturer": "",
+    "etcOtc": "일반의약품",
+    "permitDate": "2026-04-20",
+    "itemCategory": "의약품",
+    "cancelStatus": "정상",
+    "makeMaterial": "완제의약품",
+    "standardCode": "8806616060207, 8806616060214",
+    "reviewType": "표준제조기준",
+    "mainIngredient": "아세트아미노펜/구아이페네신/슈도에페드린염산염/DL-메틸에페드린염산염/덱스트로메토르판브롬화수소산염수화물/트리프롤리딘염산염수화물",
+    "mainIngredientEng": "",
+    "ingredients": [
+      {
+        "basis": "1캡슐(920 밀리그램) 중",
+        "name": "아세트아미노펜",
+        "amount": "180.00",
+        "unit": "밀리그램",
+        "standard": "USP"
+      },
+      {
+        "basis": "1캡슐(920 밀리그램) 중",
+        "name": "구아이페네신",
+        "amount": "20.84",
+        "unit": "밀리그램",
+        "standard": "KP"
+      },
+      {
+        "basis": "1캡슐(920 밀리그램) 중",
+        "name": "슈도에페드린염산염",
+        "amount": "15.00",
+        "unit": "밀리그램",
+        "standard": "USP"
+      },
+      {
+        "basis": "1캡슐(920 밀리그램) 중",
+        "name": "DL-메틸에페드린염산염",
+        "amount": "12.50",
+        "unit": "밀리그램",
+        "standard": "KP"
+      },
+      {
+        "basis": "1캡슐(920 밀리그램) 중",
+        "name": "덱스트로메토르판브롬화수소산염수화물",
+        "amount": "8.00",
+        "unit": "밀리그램",
+        "standard": "KP"
+      },
+      {
+        "basis": "1캡슐(920 밀리그램) 중",
+        "name": "트리프롤리딘염산염수화물",
+        "amount": "0.66",
+        "unit": "밀리그램",
+        "standard": "USP"
+      }
+    ],
+    "additives": [
+      "프로필렌글리콜",
+      "포비돈",
+      "정제수",
+      "소르비톨스페셜글리세린블렌드",
+      "폴리에틸렌글리콜400",
+      "락색소",
+      "젤라틴"
+    ],
+    "efficacy": "감기의 제증상(여러증상)(콧물, 코막힘, 재채기, 인후(목구멍)통, 기침, 가래, 오한(춥고 떨리는 증상), 발열, 두통, 관절통, 근육통)의 완화",
+    "dosage": "만 15세 이상 및 성인 : 1일 3회, 1회 2캡슐 식후 30분에 복용\n\n만 8세 이상 만 15세 미만 : 1일 3회, 1회 1캡슐 식후 30분에 복용",
+    "precautions": "1. 경고\n1) 매일 세잔 이상 정기적으로 술을 마시는 사람이 이 약이나 다른 해열진통제를 복용해야 할 경우 반드시 의사 또는 약사와 상의해야 한다.\n2) 아세트아미노펜을 복용한 환자에서 매우 드물게 중대한 피부 반응이 보고되었다.\n3) 이 약은 아세트아미노펜을 함유하고 있으므로 일일 최대 용량을 초과하여 복용하지 않는다.\n\n2. 다음과 같은 사람은 이 약을 복용하지 말 것.\n이 약 및 구성성분에 과민반응 병력이 있는 사람, MAO억제제를 복용 중이거나 중단 후 2주 이내인 사람, 중증 또는 조절되지 않는 고혈압 환자 등.\n\n8. 저장상의 주의사항\n어린이의 손에 닿지 않는 장소에 보관하고 직사광선을 피한다.",
+    "dur": [
+      {
+        "composition": "복합",
+        "ingredient": "모클로베미드[슈도에페드린]",
+        "type": "병용금기",
+        "dosageForm": "",
+        "caution": "",
+        "note": ""
+      },
+      {
+        "composition": "복합",
+        "ingredient": "구아이페네신",
+        "type": "임부금기",
+        "dosageForm": "연질캡슐제, 액상",
+        "caution": "2등급",
+        "note": ""
+      }
+    ],
+    "storage": "기밀용기, 실온(1~30℃)보관",
+    "validTerm": "제조일로부터 36 개월",
+    "reexamination": "",
+    "rmp": "",
+    "packageInfo": "내수용) 20 캡슐/상자(10캡슐/PTP×2)",
+    "insurancePrice": "",
+    "atcCode": "R05X (OTHER COLD PREPARATIONS)",
+    "performance": null,
+    "sourceUrl": "https://nedrug.mfds.go.kr/pbp/CCBBB01/getItemDetail?itemSeq=202601126"
+  },
+  {
+    "itemSeq": "201404452",
+    "itemName": "프롤리아프리필드시린지(데노수맙)",
+    "itemEngName": "Prolia Prefilled Syringe",
+    "appearance": "무색 내지 약간 노란색이고 투명하거나 유백광이 있으며 입자를 거의 포함하지 않는 액이 무색 투명한 프리필드시린지에 들어 있는 주사제",
+    "shape": "",
+    "entpName": "암젠코리아유한회사",
+    "entpEngName": "Amgen Korea Ltd.",
+    "contractManufacturer": "Amgen Manufacturing Limited LLC, Amgen Singapore Manufacturing Pte. Ltd (ASM), Bushu Pharmaceuticals Ltd.",
+    "etcOtc": "전문의약품",
+    "permitDate": "2014-09-29",
+    "itemCategory": "의약품",
+    "cancelStatus": "정상",
+    "makeMaterial": "완제의약품",
+    "standardCode": "8800523000400, 8800523000417, 8806500029907",
+    "reviewType": "",
+    "mainIngredient": "데노수맙",
+    "mainIngredientEng": "Denosumab",
+    "ingredients": [
+      {
+        "basis": "1프리필드시린지(1mL) 중",
+        "name": "데노수맙",
+        "amount": "60",
+        "unit": "밀리그램",
+        "standard": "별규"
+      }
+    ],
+    "additives": [
+      "빙초산",
+      "수산화나트륨",
+      "소르비톨",
+      "주사용수"
+    ],
+    "efficacy": "폐경 후 여성 골다공증 환자의 골절 위험 감소, 남성 골다공증 환자의 골밀도 증가 등",
+    "dosage": "6개월에 1회 60 mg을 피하 주사한다. 칼슘과 비타민 D 보충이 필요할 수 있다.",
+    "precautions": "저칼슘혈증은 이 약 투여 전에 교정되어야 한다. 치료 중 칼슘 농도와 감염, 피부반응, 턱뼈괴사 등 이상반응에 주의한다.",
+    "dur": [],
+    "storage": "밀봉용기, 동결을 피하여 차광, 냉장(2~8℃) 보관",
+    "validTerm": "제조일로부터 36 개월",
+    "reexamination": "",
+    "rmp": "RMP대상, 위해성 관리계획 요약서",
+    "packageInfo": "1개 x 프리필드시린지(1 mL)/박스",
+    "insurancePrice": "052300041 (108290원-2026.06.01~2028.03.17)",
+    "atcCode": "M05BX04 (denosumab)",
+    "performance": {
+      "type": "수입실적",
+      "unit": "단위 : $",
+      "rows": [
+        {
+          "year": "2024",
+          "amount": "102,197,287"
+        },
+        {
+          "year": "2023",
+          "amount": "73,237,184"
+        },
+        {
+          "year": "2022",
+          "amount": "91,356,773"
+        },
+        {
+          "year": "2021",
+          "amount": "41,311,136"
+        },
+        {
+          "year": "2020",
+          "amount": "49,981,110"
+        }
+      ]
+    },
+    "sourceUrl": "https://nedrug.mfds.go.kr/pbp/CCBBB01/getItemDetail?itemSeq=201404452"
+  },
+  {
+    "itemSeq": "202204314",
+    "itemName": "엔블로정0.3밀리그램(이나보글리플로진)",
+    "itemEngName": "Envlo Tab. 0.3mg",
+    "appearance": "연한 주황색의 양면이 볼록한 삼각형 필름코팅정제",
+    "shape": "삼각형",
+    "entpName": "(주)대웅제약",
+    "entpEngName": "Daewoong Pharmaceutical Co., Ltd.",
+    "contractManufacturer": "",
+    "etcOtc": "전문의약품",
+    "permitDate": "2022-11-30",
+    "itemCategory": "의약품",
+    "cancelStatus": "정상",
+    "makeMaterial": "완제의약품",
+    "standardCode": "8806416077801, 8806416077818, 8806416077825, 8806416077832, 8806416077849",
+    "reviewType": "신약",
+    "mainIngredient": "이나보글리플로진",
+    "mainIngredientEng": "Enavogliflozin",
+    "ingredients": [
+      {
+        "basis": "1정 중",
+        "name": "이나보글리플로진",
+        "amount": "0.3",
+        "unit": "밀리그램",
+        "standard": "별규"
+      }
+    ],
+    "additives": [
+      "미결정셀룰로오스",
+      "크로스카멜로오스나트륨",
+      "스테아르산마그네슘",
+      "오파드라이"
+    ],
+    "efficacy": "제2형 당뇨병 환자의 혈당조절 향상을 위해 식사요법 및 운동요법의 보조제로 투여",
+    "dosage": "성인에서 1일 1회 0.3 mg을 투여한다. 환자의 상태와 병용요법에 따라 의사의 지시에 따른다.",
+    "precautions": "신기능, 저혈당 위험, 케톤산증, 생식기 감염, 체액량 감소 관련 이상반응을 확인한다. 증상이 의심되면 투여 중단 및 진료가 필요하다.",
+    "dur": [],
+    "storage": "기밀용기, 실온보관(1∼30℃)",
+    "validTerm": "제조일로부터 36 개월",
+    "reexamination": "재심사대상(6년) [2022-11-30 - 2028-11-29]",
+    "rmp": "RMP대상, 위해성 관리계획 요약서",
+    "packageInfo": "30 정/상자(10정/PTPX3), 56 정/상자(14정/PTPX4), 30 정/병, 300 정/병",
+    "insurancePrice": "641607780 (593원-2026.06.01~)",
+    "atcCode": "A10BK09 (enavogliflozin)",
+    "performance": {
+      "type": "생산실적",
+      "unit": "단위 : 천원",
+      "rows": [
+        {
+          "year": "2024",
+          "amount": "11,623,249"
+        },
+        {
+          "year": "2023",
+          "amount": "8,205,400"
+        }
+      ]
+    },
+    "sourceUrl": "https://nedrug.mfds.go.kr/pbp/CCBBB01/getItemDetail?itemSeq=202204314"
+  }
+]
