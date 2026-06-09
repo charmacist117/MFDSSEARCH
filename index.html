@@ -65,36 +65,38 @@
             <span>품목구분</span>
             <div class="segmented" data-field="itemCategory">
               <button type="button" class="active" data-value="">전체</button>
-              <button type="button" data-value="의약품">의약품</button>
-              <button type="button" data-value="의약외품">의약외품</button>
-              <button type="button" data-value="생물의약품">생물의약품</button>
-              <button type="button" data-value="마약류">마약류</button>
+              <button type="button" data-value="A0">의약품</button>
+              <button type="button" data-value="B0">의약외품</button>
+              <button type="button" data-value="C0">생물의약품</button>
+              <button type="button" data-value="F0">마약류</button>
+              <button type="button" data-value="J0">첨단바이오</button>
+              <button type="button" data-value="E0">한약(생약)제제등</button>
             </div>
           </div>
           <div class="control-row">
             <span>취소/취하</span>
             <div class="segmented" data-field="cancelStatus">
               <button type="button" class="active" data-value="">전체</button>
-              <button type="button" data-value="정상">정상</button>
-              <button type="button" data-value="취하">취하</button>
-              <button type="button" data-value="유효기간만료">유효기간만료</button>
+              <button type="button" data-value="0">정상</button>
+              <button type="button" data-value="2">취하</button>
+              <button type="button" data-value="A">유효기간 만료</button>
             </div>
           </div>
           <div class="control-row">
             <span>전문/일반</span>
             <div class="segmented" data-field="etcOtc">
               <button type="button" class="active" data-value="">전체</button>
-              <button type="button" data-value="전문">전문</button>
-              <button type="button" data-value="일반">일반</button>
+              <button type="button" data-value="02">전문</button>
+              <button type="button" data-value="01">일반</button>
             </div>
           </div>
           <div class="control-row">
             <span>완제/원료</span>
             <div class="segmented" data-field="makeMaterial">
               <button type="button" class="active" data-value="">전체</button>
-              <button type="button" data-value="완제">완제</button>
-              <button type="button" data-value="원료">원료</button>
-              <button type="button" data-value="한약재">한약재</button>
+              <button type="button" data-value="01">완제</button>
+              <button type="button" data-value="03">원료</button>
+              <button type="button" data-value="02">한약재</button>
             </div>
           </div>
 
@@ -152,7 +154,7 @@
           </div>
           <div>
             <h1>의약품등 정보 검색</h1>
-            <p>상세정보, 성분, DUR, 생산/수입실적 통합 조회</p>
+            <p>MFDS 전체 목록, 상세정보, 성분, DUR, 생산/수입실적 통합 조회</p>
           </div>
           <button id="csvButton" class="csv-button" type="button">CSV</button>
         </header>
@@ -163,6 +165,18 @@
             <button type="button" class="active" data-view="split">상세</button>
             <button type="button" data-view="table">목록</button>
           </div>
+        </section>
+
+        <section class="pager-bar" aria-label="페이지 이동">
+          <button id="prevPage" type="button">이전</button>
+          <label>
+            <span>페이지</span>
+            <input id="pageInput" type="number" min="1" value="1">
+          </label>
+          <button id="goPage" type="button">이동</button>
+          <button id="nextPage" type="button">다음</button>
+          <span id="pageInfo">1 / 1</span>
+          <span id="statusText">MFDS 실시간 목록</span>
         </section>
 
         <section class="content-grid">

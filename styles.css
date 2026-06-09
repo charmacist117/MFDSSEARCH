@@ -346,6 +346,60 @@ button:focus-visible {
   font-weight: 800;
 }
 
+.pager-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.pager-bar button {
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+  color: #34464e;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.pager-bar button:disabled {
+  cursor: not-allowed;
+  color: #9aa8af;
+  background: #f3f6f7;
+}
+
+.pager-bar label {
+  display: inline-grid;
+  grid-template-columns: auto 74px;
+  align-items: center;
+  gap: 6px;
+  color: #40515a;
+  font-weight: 800;
+}
+
+.pager-bar input {
+  height: 30px;
+  text-align: right;
+}
+
+#pageInfo {
+  color: #263941;
+  font-weight: 900;
+  padding: 0 8px;
+}
+
+#statusText {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .content-grid {
   display: grid;
   grid-template-columns: minmax(480px, 0.95fr) minmax(360px, 1.05fr);
@@ -401,6 +455,18 @@ button:focus-visible {
   text-align: left;
   font-weight: 800;
   padding: 0;
+}
+
+.table-message {
+  margin: 0;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.table-message.error {
+  color: var(--rose);
+  text-align: left;
 }
 
 .muted {
@@ -618,6 +684,11 @@ body.table-only .detail-panel {
 
   .dashboard-header {
     grid-template-columns: 48px 1fr;
+  }
+
+  #statusText {
+    width: 100%;
+    margin-left: 0;
   }
 
   .title-mark {

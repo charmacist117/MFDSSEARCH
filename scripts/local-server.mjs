@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+
+const require = createRequire(import.meta.url);
+const { searchMfds, getMfdsDetail } = require("../lib/mfds.js");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -14,42 +18,9 @@ const mime = {
   ".svg": "image/svg+xml"
 };
 
-async function readJsonData() {
-  for (const name of ["drugs.json", "drugs.sample.json"]) {
-    try {
-      const content = await fs.readFile(path.join(root, "data", name), "utf8");
-      return JSON.parse(content);
-    } catch {
-      // Try the next file.
-    }
-  }
-  return [];
-}
-
-function normalize(value) {
-  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function includes(source, query) {
-  return !query || normalize(source).includes(normalize(query));
-}
-
-function searchItems(data, params) {
-  return data.filter((drug) => {
-    const ingredients = [
-      drug.mainIngredient,
-      drug.mainIngredientEng,
-      ...(drug.ingredients || []).map((item) => `${item.name || ""} ${item.engName || ""}`)
-    ].join(" ");
-
-    return (
-      includes(drug.itemName, params.get("productName")) &&
-      includes(drug.entpName, params.get("companyName")) &&
-      includes(ingredients, params.get("ingredient1")) &&
-      includes(drug.itemSeq, params.get("itemSeq")) &&
-      includes(drug.atcCode, params.get("atcCode"))
-    );
-  });
+function sendJson(res, code, payload) {
+  res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(payload));
 }
 
 const server = http.createServer(async (req, res) => {
@@ -57,18 +28,20 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || "/", `http://localhost:${port}`);
 
     if (url.pathname === "/api/search") {
-      const data = await readJsonData();
-      const items = searchItems(data, url.searchParams);
-      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({ total: items.length, items }));
+      try {
+        sendJson(res, 200, await searchMfds(Object.fromEntries(url.searchParams.entries())));
+      } catch (error) {
+        sendJson(res, 502, { error: "mfds_search_failed", message: error.message });
+      }
       return;
     }
 
     if (url.pathname === "/api/detail") {
-      const data = await readJsonData();
-      const drug = data.find((item) => item.itemSeq === url.searchParams.get("itemSeq"));
-      res.writeHead(drug ? 200 : 404, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify(drug || { error: "not_found" }));
+      try {
+        sendJson(res, 200, await getMfdsDetail(url.searchParams.get("itemSeq")));
+      } catch (error) {
+        sendJson(res, 502, { error: "mfds_detail_failed", message: error.message });
+      }
       return;
     }
 
