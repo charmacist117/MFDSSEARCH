@@ -554,4 +554,86 @@ if (splitter && contentGrid) {
   });
 }
 
+/* ── Resizable table column headers ── */
+
+function initColumnResize() {
+  const table = document.querySelector(".result-table");
+  if (!table) return;
+  const headerRow = table.querySelector("thead tr");
+  if (!headerRow) return;
+
+  // Remove old handles if re-initializing
+  headerRow.querySelectorAll(".col-resize-handle").forEach((h) => h.remove());
+
+  const ths = Array.from(headerRow.querySelectorAll("th"));
+  if (!ths.length) return;
+
+  // Switch to fixed layout for precise control
+  table.style.tableLayout = "fixed";
+
+  // Set initial widths from current rendered widths
+  ths.forEach((th) => {
+    th.style.width = `${th.offsetWidth}px`;
+  });
+
+  // Add handles to all columns except last
+  ths.forEach((th, index) => {
+    if (index === ths.length - 1) return;
+    const handle = document.createElement("div");
+    handle.className = "col-resize-handle";
+    th.appendChild(handle);
+
+    let startX = 0;
+    let startWidth = 0;
+    let nextTh = null;
+    let nextStartWidth = 0;
+    let colDragging = false;
+
+    handle.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      colDragging = true;
+      startX = event.clientX;
+      startWidth = th.offsetWidth;
+      nextTh = ths[index + 1] || null;
+      nextStartWidth = nextTh ? nextTh.offsetWidth : 0;
+      handle.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    });
+
+    document.addEventListener("mousemove", (event) => {
+      if (!colDragging) return;
+      const delta = event.clientX - startX;
+      const newWidth = Math.max(60, startWidth + delta);
+      const consumed = newWidth - startWidth;
+      th.style.width = `${newWidth}px`;
+      if (nextTh) {
+        const newNext = Math.max(40, nextStartWidth - consumed);
+        nextTh.style.width = `${newNext}px`;
+      }
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (!colDragging) return;
+      colDragging = false;
+      handle.classList.remove("dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    });
+  });
+}
+
+// Initialize column resize after first paint
+requestAnimationFrame(() => {
+  setTimeout(initColumnResize, 100);
+});
+
+// Re-initialize column resize when table is re-rendered
+const origRenderResults = renderResults;
+renderResults = function () {
+  origRenderResults();
+  requestAnimationFrame(() => initColumnResize());
+};
+
 loadResults();

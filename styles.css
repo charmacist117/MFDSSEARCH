@@ -521,6 +521,24 @@ button:focus-visible {
   color: #33454d;
   font-size: 12px;
   white-space: nowrap;
+  position: relative;
+}
+
+.col-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+  background: transparent;
+  transition: background 0.12s;
+}
+
+.col-resize-handle:hover,
+.col-resize-handle.dragging {
+  background: rgba(19, 140, 163, 0.35);
 }
 
 .result-table tr {
