@@ -73,16 +73,20 @@ function buildSearchUrl(query = {}) {
   return `${BASE_URL}/searchDrug?${new URLSearchParams(buildSearchCriteria(query))}`;
 }
 
-async function fetchMfdsText(url, retries = 1) {
+async function fetchMfdsText(url, retries = 3) {
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 26000);
+    const timeout = setTimeout(() => controller.abort(), 30000);
     try {
       const response = await fetch(url, {
         headers: {
-          "user-agent": "Mozilla/5.0 MFDS dashboard",
-          accept: "text/html,application/xhtml+xml"
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+          "accept-encoding": "gzip, deflate, br",
+          "connection": "keep-alive",
+          "cache-control": "no-cache"
         },
         redirect: "follow",
         signal: controller.signal
@@ -91,7 +95,7 @@ async function fetchMfdsText(url, retries = 1) {
       return { url: response.url, text: await response.text() };
     } catch (error) {
       lastError = error;
-      if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      if (attempt < retries) await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
     } finally {
       clearTimeout(timeout);
     }
@@ -483,6 +487,8 @@ async function searchMfds(query = {}) {
   let total = parsed.total;
   let notice = "";
   const contractManufacturer = valueOf(query.contractManufacturer);
+  const ingredient4 = valueOf(query.ingredient4);
+  const ingredient5 = valueOf(query.ingredient5);
 
   if (contractManufacturer) {
     const detailed = await mapConcurrent(items, 3, async (item) => {
@@ -496,6 +502,17 @@ async function searchMfds(query = {}) {
     items = detailed.filter((item) => includesText(item.contractManufacturer, contractManufacturer));
     total = items.length;
     notice = "위탁제조업체 검색은 원본 목록 조건에 없어 현재 페이지 상세 확인 기준으로 필터링됩니다. 전체 정확 검색은 상세 수집 DB가 필요합니다.";
+  }
+
+  if (ingredient4 || ingredient5) {
+    items = items.filter((item) => {
+      const src = item.mainIngredient || "";
+      if (ingredient4 && !includesText(src, ingredient4)) return false;
+      if (ingredient5 && !includesText(src, ingredient5)) return false;
+      return true;
+    });
+    total = items.length;
+    if (!notice) notice = "성분명4/5 검색은 현재 페이지 주성분 텍스트 기준으로 필터링됩니다.";
   }
 
   const pageSize = items.length || parsed.items.length || 10;
@@ -512,7 +529,8 @@ async function searchMfds(query = {}) {
 
 async function getMfdsDetail(itemSeq) {
   if (!itemSeq) throw new Error("itemSeq is required");
-  const { url, text } = await fetchMfdsText(`${BASE_URL}/pbp/CCBBB01/getItemDetail?itemSeq=${encodeURIComponent(itemSeq)}`);
+  const detailUrl = `${BASE_URL}/pbp/CCBBB01/getItemDetail?itemSeq=${encodeURIComponent(itemSeq)}`;
+  const { url, text } = await fetchMfdsText(detailUrl, 3);
   return parseDetailHtml(text, url);
 }
 

@@ -66,8 +66,12 @@ async function fetchText(url, retries = 3) {
     try {
       const response = await fetch(url, {
         headers: {
-          "user-agent": "Mozilla/5.0 MFDS dashboard crawler",
-          accept: "text/html,application/xhtml+xml"
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+          "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+          "accept-encoding": "gzip, deflate, br",
+          "connection": "keep-alive",
+          "cache-control": "no-cache"
         },
         redirect: "follow"
       });
@@ -80,7 +84,7 @@ async function fetchText(url, retries = 3) {
       };
     } catch (error) {
       lastError = error;
-      await sleep(700 * attempt);
+      await sleep(800 * attempt);
     }
   }
   throw lastError;

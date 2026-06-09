@@ -53,9 +53,50 @@ function selectedDrug() {
   return state.detailCache[state.selectedSeq] || selectedRow();
 }
 
+function mergeKeepNonEmpty(base, overlay) {
+  const result = { ...base };
+  for (const [key, value] of Object.entries(overlay || {})) {
+    if (value === "" && result[key] && result[key] !== "") continue;
+    result[key] = value;
+  }
+  return result;
+}
+
 function rowWithCachedDetail(row) {
   const detail = state.detailCache[row.itemSeq];
-  return detail ? { ...row, ...detail } : row;
+  return detail ? mergeKeepNonEmpty(row, detail) : row;
+}
+
+function formatPerformance(performance) {
+  if (!performance || !performance.rows || !performance.rows.length) {
+    return `<span class="muted">-</span>`;
+  }
+  const sorted = [...performance.rows].sort((a, b) => Number(b.year) - Number(a.year));
+  const latest = sorted[0];
+  const unitText = performance.unit || "";
+  let symbol = "";
+  let suffix = "";
+  if (unitText.includes("달러") || unitText.toLowerCase().includes("dollar") || unitText.includes("$")) {
+    symbol = "$";
+  } else if (unitText.includes("원") || unitText.includes("₩") || unitText.includes("￦")) {
+    symbol = "₩";
+    if (unitText.includes("천원")) {
+      suffix = " (천원)";
+    }
+  } else {
+    symbol = "₩";
+    if (unitText.includes("천원")) {
+      suffix = " (천원)";
+    }
+  }
+  const shortType = performance.type === "생산실적" ? "생산" : performance.type === "수입실적" ? "수입" : "실적";
+  const badgeClass = performance.type === "생산실적" ? "tag-prod" : "tag-imp";
+  return `
+    <div class="perf-cell">
+      <span class="perf-badge ${badgeClass}">${shortType} (${latest.year})</span>
+      <span class="perf-amount">${symbol}${latest.amount}${suffix}</span>
+    </div>
+  `;
 }
 
 function buildSearchParams() {
@@ -88,7 +129,7 @@ async function loadResults({ resetPage = false } = {}) {
     state.listLoading = false;
     render();
 
-    if (state.selectedSeq) loadDetail(state.selectedSeq);
+    preloadAllDetails();
   } catch (error) {
     state.rows = [];
     state.total = 0;
@@ -97,6 +138,64 @@ async function loadResults({ resetPage = false } = {}) {
     state.error = error.message;
     state.notice = "";
     render();
+  }
+}
+
+let preloadGeneration = 0;
+
+async function preloadAllDetails() {
+  const gen = ++preloadGeneration;
+  const seqs = state.rows
+    .map((row) => row.itemSeq)
+    .filter((seq) => seq && !state.detailCache[seq]);
+
+  if (!seqs.length) {
+    if (state.selectedSeq) {
+      render();
+    }
+    return;
+  }
+
+  // Fetch the selected item first for immediate detail panel display
+  if (state.selectedSeq && seqs.includes(state.selectedSeq)) {
+    state.detailLoadingSeq = state.selectedSeq;
+    render();
+    await fetchAndCacheDetail(state.selectedSeq);
+    if (gen !== preloadGeneration) return;
+    if (state.detailLoadingSeq === state.selectedSeq) state.detailLoadingSeq = "";
+    render();
+  }
+
+  // Then fetch the rest concurrently (3 at a time)
+  const remaining = seqs.filter((seq) => !state.detailCache[seq]);
+  const concurrency = 3;
+  let index = 0;
+
+  async function worker() {
+    while (index < remaining.length) {
+      if (gen !== preloadGeneration) return;
+      const currentIndex = index;
+      index += 1;
+      await fetchAndCacheDetail(remaining[currentIndex]);
+      if (gen !== preloadGeneration) return;
+      render();
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, remaining.length) }, worker));
+}
+
+async function fetchAndCacheDetail(itemSeq) {
+  if (state.detailCache[itemSeq]) return;
+  try {
+    const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
+    const payload = await response.json();
+    const row = state.rows.find((r) => r.itemSeq === itemSeq);
+    state.detailCache[itemSeq] = mergeKeepNonEmpty(row, payload);
+  } catch (error) {
+    const row = state.rows.find((r) => r.itemSeq === itemSeq);
+    state.detailCache[itemSeq] = { ...row, detailError: error.message };
   }
 }
 
@@ -113,7 +212,7 @@ async function loadDetail(itemSeq) {
     const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
     const payload = await response.json();
-    state.detailCache[itemSeq] = { ...selectedRow(), ...payload };
+    state.detailCache[itemSeq] = mergeKeepNonEmpty(selectedRow(), payload);
   } catch (error) {
     state.detailCache[itemSeq] = { ...selectedRow(), detailError: error.message };
   } finally {
@@ -135,17 +234,17 @@ function renderResults() {
   statusText.textContent = state.listLoading ? "목록을 불러오는 중" : state.error || state.notice || "MFDS 실시간 목록";
 
   if (state.listLoading) {
-    resultBody.innerHTML = `<tr><td colspan="7" class="table-message">MFDS 목록을 불러오는 중입니다.</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="8" class="table-message">MFDS 목록을 불러오는 중입니다.</td></tr>`;
     return;
   }
 
   if (state.error) {
-    resultBody.innerHTML = `<tr><td colspan="7" class="table-message error">${escapeHtml(state.error)}</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="8" class="table-message error">${escapeHtml(state.error)}</td></tr>`;
     return;
   }
 
   if (!state.rows.length) {
-    resultBody.innerHTML = `<tr><td colspan="7" class="table-message">검색 결과가 없습니다.</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="8" class="table-message">검색 결과가 없습니다.</td></tr>`;
     return;
   }
 
@@ -176,6 +275,7 @@ function renderResults() {
           <td>${escapeHtml(drug.permitDate || "-")}</td>
           <td>${escapeHtml(drug.atcCode || "-")}</td>
           <td>${escapeHtml(drug.contractManufacturer || "-")}</td>
+          <td>${formatPerformance(drug.performance)}</td>
         </tr>
       `;
     })
@@ -382,12 +482,28 @@ function downloadCsv() {
     ["mainIngredientEng", "주성분영문명"],
     ["additives", "첨가제"],
     ["standardCode", "표준코드"],
-    ["atcCode", "ATC코드"]
+    ["atcCode", "ATC코드"],
+    ["performance", "생산/수입실적"]
   ];
 
   const lines = [
     headers.map(([, label]) => toCsvValue(label)).join(","),
-    ...state.rows.map((drug) => headers.map(([key]) => toCsvValue(drug[key])).join(","))
+    ...state.rows.map((row) => {
+      const drug = rowWithCachedDetail(row);
+      return headers.map(([key]) => {
+        if (key === "performance") {
+          const perf = drug.performance;
+          if (!perf || !perf.rows || !perf.rows.length) return toCsvValue("-");
+          const sorted = [...perf.rows].sort((a, b) => Number(b.year) - Number(a.year));
+          const latest = sorted[0];
+          const unitText = perf.unit || "";
+          let symbol = unitText.includes("달러") || unitText.includes("$") ? "$" : "₩";
+          let suffix = symbol === "₩" && unitText.includes("천원") ? " (천원)" : "";
+          return toCsvValue(`${perf.type} (${latest.year}): ${symbol}${latest.amount}${suffix}`);
+        }
+        return toCsvValue(drug[key]);
+      }).join(",");
+    })
   ];
   const blob = new Blob(["\ufeff", lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -416,6 +532,12 @@ form.addEventListener("reset", () => {
   document.querySelectorAll(".quick-dates button").forEach((button) => {
     button.classList.toggle("active", button.dataset.range === "");
   });
+  const extraWrap = document.querySelector("#extraIngredientWrap");
+  const toggle = document.querySelector("#extraIngredientToggle");
+  if (extraWrap && !extraWrap.classList.contains("collapsed")) {
+    extraWrap.classList.add("collapsed");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+  }
   setTimeout(() => loadResults({ resetPage: true }), 0);
 });
 
@@ -499,4 +621,124 @@ pageInput.addEventListener("keydown", (event) => {
 
 csvButton.addEventListener("click", downloadCsv);
 
+/* ── Collapsible extra ingredients toggle ── */
+
+const extraToggle = document.querySelector("#extraIngredientToggle");
+const extraWrap = document.querySelector("#extraIngredientWrap");
+
+if (extraToggle && extraWrap) {
+  extraToggle.addEventListener("click", () => {
+    const isCollapsed = extraWrap.classList.toggle("collapsed");
+    extraToggle.setAttribute("aria-expanded", String(!isCollapsed));
+  });
+}
+
+/* ── Draggable layout splitter ── */
+
+const splitter = document.querySelector("#layoutSplitter");
+const contentGrid = document.querySelector(".content-grid");
+
+if (splitter && contentGrid) {
+  let dragging = false;
+
+  splitter.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    dragging = true;
+    splitter.classList.add("dragging");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  });
+
+  document.addEventListener("mousemove", (event) => {
+    if (!dragging) return;
+    const rect = contentGrid.getBoundingClientRect();
+    const offset = event.clientX - rect.left;
+    const total = rect.width;
+    const minLeft = 300;
+    const minRight = 200;
+    const splitterWidth = 8;
+    const clamped = Math.max(minLeft, Math.min(offset, total - minRight - splitterWidth));
+    contentGrid.style.gridTemplateColumns = `${clamped}px ${splitterWidth}px minmax(${minRight}px, 1fr)`;
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove("dragging");
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  });
+}
+
+/* ── Resizable table column headers ── */
+
+function initColumnResize() {
+  const table = document.querySelector(".result-table");
+  if (!table) return;
+  const headerRow = table.querySelector("thead tr");
+  if (!headerRow) return;
+
+  const ths = Array.from(headerRow.querySelectorAll("th"));
+  if (!ths.length) return;
+
+  // Add handles to all columns except the last
+  ths.forEach((th, index) => {
+    if (index === ths.length - 1) return;
+    
+    // Create handle if it doesn't exist
+    let handle = th.querySelector(".col-resize-handle");
+    if (!handle) {
+      handle = document.createElement("div");
+      handle.className = "col-resize-handle";
+      th.appendChild(handle);
+    }
+
+    let startX = 0;
+    let startWidth = 0;
+    let nextTh = null;
+    let nextStartWidth = 0;
+    let colDragging = false;
+
+    const onMouseMove = (event) => {
+      if (!colDragging) return;
+      const delta = event.clientX - startX;
+      const newWidth = Math.max(60, startWidth + delta);
+      const consumed = newWidth - startWidth;
+      th.style.width = `${newWidth}px`;
+      if (nextTh) {
+        const newNext = Math.max(40, nextStartWidth - consumed);
+        nextTh.style.width = `${newNext}px`;
+      }
+    };
+
+    const onMouseUp = () => {
+      if (!colDragging) return;
+      colDragging = false;
+      handle.classList.remove("dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    handle.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      colDragging = true;
+      startX = event.clientX;
+      startWidth = th.offsetWidth;
+      nextTh = ths[index + 1] || null;
+      nextStartWidth = nextTh ? nextTh.offsetWidth : 0;
+      
+      handle.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    });
+  });
+}
+
+initColumnResize();
 loadResults();

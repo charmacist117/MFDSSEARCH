@@ -47,6 +47,20 @@
             <span>성분명3</span>
             <input name="ingredient3" autocomplete="off">
           </label>
+          <button type="button" class="collapse-toggle" id="extraIngredientToggle" aria-expanded="false" aria-controls="extraIngredientWrap">
+            <span>추가 성분 검색</span>
+            <span class="collapse-icon">▾</span>
+          </button>
+          <div class="extra-ingredients-wrap collapsed" id="extraIngredientWrap">
+            <label>
+              <span>성분명4</span>
+              <input name="ingredient4" autocomplete="off">
+            </label>
+            <label>
+              <span>성분명5</span>
+              <input name="ingredient5" autocomplete="off">
+            </label>
+          </div>
           <label>
             <span>성분영문명</span>
             <input name="ingredientEngName" autocomplete="off">
@@ -195,11 +209,14 @@
                   <th>허가일</th>
                   <th>ATC</th>
                   <th>위탁제조업체</th>
+                  <th>생산/수입실적</th>
                 </tr>
               </thead>
               <tbody id="resultBody"></tbody>
             </table>
           </div>
+
+          <div class="splitter" id="layoutSplitter" role="separator" aria-label="화면 분할 조절"></div>
 
           <article id="detailPanel" class="detail-panel" aria-live="polite"></article>
         </section>
