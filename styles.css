@@ -511,6 +511,8 @@ button:focus-visible {
   padding: 9px 10px;
   vertical-align: top;
   text-align: left;
+  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
 .result-table th {
