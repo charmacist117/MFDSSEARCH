@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>의약품 상세정보 대시보드</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="search-panel" aria-label="상세검색">
+        <div class="panel-tabs">
+          <button class="tab active" type="button">상세검색</button>
+          <button class="tab" type="button">낱알검색</button>
+        </div>
+
+        <form id="searchForm" class="filter-form">
+          <label>
+            <span>제품명</span>
+            <input name="productName" autocomplete="off">
+          </label>
+          <label>
+            <span>제품영문명</span>
+            <input name="productEngName" autocomplete="off">
+          </label>
+          <label>
+            <span>업체명</span>
+            <input name="companyName" autocomplete="off">
+          </label>
+          <label>
+            <span>업체영문명</span>
+            <input name="companyEngName" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명1</span>
+            <input name="ingredient1" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명2</span>
+            <input name="ingredient2" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명3</span>
+            <input name="ingredient3" autocomplete="off">
+          </label>
+          <label>
+            <span>성분영문명</span>
+            <input name="ingredientEngName" autocomplete="off">
+          </label>
+          <label>
+            <span>품목기준코드</span>
+            <input name="itemSeq" autocomplete="off">
+          </label>
+          <label>
+            <span>표준코드</span>
+            <input name="standardCode" autocomplete="off">
+          </label>
+          <label class="inline-action">
+            <span>ATC코드</span>
+            <input name="atcCode" autocomplete="off">
+            <button class="small-button" type="button" data-field-action="atcCode">검색</button>
+          </label>
+
+          <div class="control-row">
+            <span>품목구분</span>
+            <div class="segmented" data-field="itemCategory">
+              <button type="button" class="active" data-value="">전체</button>
+              <button type="button" data-value="의약품">의약품</button>
+              <button type="button" data-value="의약외품">의약외품</button>
+              <button type="button" data-value="생물의약품">생물의약품</button>
+              <button type="button" data-value="마약류">마약류</button>
+            </div>
+          </div>
+          <div class="control-row">
+            <span>취소/취하</span>
+            <div class="segmented" data-field="cancelStatus">
+              <button type="button" class="active" data-value="">전체</button>
+              <button type="button" data-value="정상">정상</button>
+              <button type="button" data-value="취하">취하</button>
+              <button type="button" data-value="유효기간만료">유효기간만료</button>
+            </div>
+          </div>
+          <div class="control-row">
+            <span>전문/일반</span>
+            <div class="segmented" data-field="etcOtc">
+              <button type="button" class="active" data-value="">전체</button>
+              <button type="button" data-value="전문">전문</button>
+              <button type="button" data-value="일반">일반</button>
+            </div>
+          </div>
+          <div class="control-row">
+            <span>완제/원료</span>
+            <div class="segmented" data-field="makeMaterial">
+              <button type="button" class="active" data-value="">전체</button>
+              <button type="button" data-value="완제">완제</button>
+              <button type="button" data-value="원료">원료</button>
+              <button type="button" data-value="한약재">한약재</button>
+            </div>
+          </div>
+
+          <label class="operator-line">
+            <span>효능효과</span>
+            <select name="efficacyOperator">
+              <option>AND</option>
+              <option>OR</option>
+            </select>
+            <input name="efficacyQuery" autocomplete="off">
+          </label>
+          <label class="operator-line">
+            <span>용법용량</span>
+            <select name="dosageOperator">
+              <option>AND</option>
+              <option>OR</option>
+            </select>
+            <input name="dosageQuery" autocomplete="off">
+          </label>
+          <label class="operator-line">
+            <span>사용상의주의사항</span>
+            <select name="precautionOperator">
+              <option>AND</option>
+              <option>OR</option>
+            </select>
+            <input name="precautionQuery" autocomplete="off">
+          </label>
+
+          <div class="date-block">
+            <span>허가일</span>
+            <div class="quick-dates">
+              <button type="button" data-range="">전체</button>
+              <button type="button" data-range="1m">1개월</button>
+              <button type="button" data-range="6m">6개월</button>
+              <button type="button" data-range="1y">1년</button>
+              <button type="button" data-range="3y">3년</button>
+            </div>
+            <div class="date-inputs">
+              <input type="date" name="permitStart">
+              <input type="date" name="permitEnd">
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button class="primary" type="submit">검색</button>
+            <button class="secondary" type="reset">초기화</button>
+          </div>
+        </form>
+      </aside>
+
+      <main class="results-panel">
+        <header class="dashboard-header">
+          <div class="title-mark" aria-hidden="true">
+            <span></span>
+          </div>
+          <div>
+            <h1>의약품등 정보 검색</h1>
+            <p>상세정보, 성분, DUR, 생산/수입실적 통합 조회</p>
+          </div>
+          <button id="csvButton" class="csv-button" type="button">CSV</button>
+        </header>
+
+        <section class="result-toolbar">
+          <p id="resultCount">총 0건</p>
+          <div class="view-options">
+            <button type="button" class="active" data-view="split">상세</button>
+            <button type="button" data-view="table">목록</button>
+          </div>
+        </section>
+
+        <section class="content-grid">
+          <div class="result-table-wrap">
+            <table class="result-table">
+              <thead>
+                <tr>
+                  <th>순번</th>
+                  <th>제품명</th>
+                  <th>업체명</th>
+                  <th>주성분</th>
+                  <th>전문/일반</th>
+                  <th>허가일</th>
+                  <th>ATC</th>
+                </tr>
+              </thead>
+              <tbody id="resultBody"></tbody>
+            </table>
+          </div>
+
+          <article id="detailPanel" class="detail-panel" aria-live="polite"></article>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
