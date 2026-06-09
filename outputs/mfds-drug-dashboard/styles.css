@@ -457,6 +457,17 @@ button:focus-visible {
   padding: 0;
 }
 
+.ingredient-lines {
+  display: grid;
+  gap: 3px;
+  min-width: 160px;
+}
+
+.ingredient-lines span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
 .table-message {
   margin: 0;
   padding: 18px;
@@ -615,6 +626,45 @@ button:focus-visible {
 .text-block.compact {
   max-height: 260px;
   overflow: auto;
+}
+
+.doc-html {
+  white-space: normal;
+}
+
+.doc-html p {
+  margin: 0 0 8px;
+}
+
+.doc-html div {
+  margin: 0 0 8px;
+}
+
+.doc-html table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 12px;
+  table-layout: auto;
+}
+
+.doc-html th,
+.doc-html td {
+  border: 1px solid var(--border);
+  padding: 7px 8px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.doc-html th {
+  background: #eef3f5;
+  color: #33454d;
+  font-weight: 800;
+}
+
+.doc-html ul,
+.doc-html ol {
+  margin: 6px 0 10px 20px;
+  padding: 0;
 }
 
 .section-split {

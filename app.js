@@ -9,6 +9,7 @@ const state = {
   detailLoadingSeq: "",
   listLoading: false,
   error: "",
+  notice: "",
   filters: {
     itemCategory: "",
     cancelStatus: "",
@@ -52,6 +53,11 @@ function selectedDrug() {
   return state.detailCache[state.selectedSeq] || selectedRow();
 }
 
+function rowWithCachedDetail(row) {
+  const detail = state.detailCache[row.itemSeq];
+  return detail ? { ...row, ...detail } : row;
+}
+
 function buildSearchParams() {
   const values = Object.fromEntries(new FormData(form).entries());
   const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page) });
@@ -74,6 +80,7 @@ async function loadResults({ resetPage = false } = {}) {
 
     state.rows = payload.items || [];
     state.total = Number(payload.total || 0);
+    state.notice = payload.notice || "";
     state.page = Number(payload.page || state.page);
     state.pageSize = Number(payload.pageSize || state.rows.length || 10);
     state.totalPages = Math.max(Number(payload.totalPages || 1), 1);
@@ -88,6 +95,7 @@ async function loadResults({ resetPage = false } = {}) {
     state.selectedSeq = "";
     state.listLoading = false;
     state.error = error.message;
+    state.notice = "";
     render();
   }
 }
@@ -104,7 +112,8 @@ async function loadDetail(itemSeq) {
   try {
     const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
-    state.detailCache[itemSeq] = await response.json();
+    const payload = await response.json();
+    state.detailCache[itemSeq] = { ...selectedRow(), ...payload };
   } catch (error) {
     state.detailCache[itemSeq] = { ...selectedRow(), detailError: error.message };
   } finally {
@@ -123,7 +132,7 @@ function renderResults() {
   prevPage.disabled = state.page <= 1 || state.listLoading;
   nextPage.disabled = state.page >= state.totalPages || state.listLoading;
   goPage.disabled = state.listLoading;
-  statusText.textContent = state.listLoading ? "목록을 불러오는 중" : state.error || "MFDS 실시간 목록";
+  statusText.textContent = state.listLoading ? "목록을 불러오는 중" : state.error || state.notice || "MFDS 실시간 목록";
 
   if (state.listLoading) {
     resultBody.innerHTML = `<tr><td colspan="7" class="table-message">MFDS 목록을 불러오는 중입니다.</td></tr>`;
@@ -141,25 +150,32 @@ function renderResults() {
   }
 
   resultBody.innerHTML = state.rows
-    .map((drug, index) => {
+    .map((row, index) => {
+      const drug = rowWithCachedDetail(row);
       const selected = drug.itemSeq === state.selectedSeq ? "selected" : "";
       const rowNumber = drug.rowNumber || String((state.page - 1) * state.pageSize + index + 1);
+      const ingredientLines = String(drug.mainIngredient || "-")
+        .split(/\s*[/,]\s*/)
+        .filter(Boolean)
+        .map((item) => `<span>${escapeHtml(item)}</span>`)
+        .join("");
       return `
         <tr class="${selected}" data-seq="${escapeHtml(drug.itemSeq)}">
-          <td>${escapeHtml(rowNumber)}</td>
           <td>
             <button type="button" data-select="${escapeHtml(drug.itemSeq)}">${escapeHtml(drug.itemName)}</button>
             <div class="tag-row">
+              <span class="tag">${escapeHtml(rowNumber)}</span>
               <span class="tag blue">${escapeHtml(drug.itemSeq)}</span>
               <span class="tag">${escapeHtml(drug.itemCategory || "-")}</span>
               <span class="tag ${drug.cancelStatus === "정상" ? "green" : "amber"}">${escapeHtml(drug.cancelStatus || "-")}</span>
             </div>
           </td>
           <td>${escapeHtml(drug.entpName || "-")}</td>
-          <td>${escapeHtml(snippet(drug.mainIngredient || "-", 68))}</td>
+          <td><div class="ingredient-lines">${ingredientLines || "-"}</div></td>
           <td>${escapeHtml(drug.etcOtc || "-")}</td>
           <td>${escapeHtml(drug.permitDate || "-")}</td>
           <td>${escapeHtml(drug.atcCode || "-")}</td>
+          <td>${escapeHtml(drug.contractManufacturer || "-")}</td>
         </tr>
       `;
     })
@@ -221,6 +237,18 @@ function renderTextSection(title, text, compact = false) {
       <div class="text-block ${compact ? "compact" : ""}">${escapeHtml(text)}</div>
     </section>
   `;
+}
+
+function renderHtmlSection(title, html, fallbackText = "", compact = false) {
+  if (String(html || "").trim()) {
+    return `
+      <section>
+        <h3 class="section-title">${escapeHtml(title)}</h3>
+        <div class="text-block doc-html ${compact ? "compact" : ""}">${html}</div>
+      </section>
+    `;
+  }
+  return renderTextSection(title, fallbackText, compact);
 }
 
 function renderDetail() {
@@ -303,7 +331,7 @@ function renderDetail() {
         ${renderTextSection("효능효과", drug.efficacy)}
         ${renderTextSection("용법용량", drug.dosage)}
       </div>
-      ${renderTextSection("사용상의 주의사항", drug.precautions, true)}
+      ${renderHtmlSection("사용상의 주의사항", drug.precautionsHtml, drug.precautions, true)}
       ${renderTable("의약품 적정 사용정보(DUR)", drug.dur || [], [
         { key: "composition", label: "단일/복합" },
         { key: "ingredient", label: "DUR성분" },
@@ -344,6 +372,7 @@ function downloadCsv() {
     ["itemEngName", "제품영문명"],
     ["entpName", "업체명"],
     ["entpEngName", "업체영문명"],
+    ["contractManufacturer", "위탁제조업체"],
     ["etcOtc", "전문/일반"],
     ["permitDate", "허가일"],
     ["itemCategory", "품목구분"],
@@ -387,6 +416,12 @@ form.addEventListener("reset", () => {
   document.querySelectorAll(".quick-dates button").forEach((button) => {
     button.classList.toggle("active", button.dataset.range === "");
   });
+  const extraWrap = document.querySelector("#extraIngredientWrap");
+  const toggle = document.querySelector("#extraIngredientToggle");
+  if (extraWrap && !extraWrap.classList.contains("collapsed")) {
+    extraWrap.classList.add("collapsed");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+  }
   setTimeout(() => loadResults({ resetPage: true }), 0);
 });
 
@@ -469,5 +504,54 @@ pageInput.addEventListener("keydown", (event) => {
 });
 
 csvButton.addEventListener("click", downloadCsv);
+
+/* ── Collapsible extra ingredients toggle ── */
+
+const extraToggle = document.querySelector("#extraIngredientToggle");
+const extraWrap = document.querySelector("#extraIngredientWrap");
+
+if (extraToggle && extraWrap) {
+  extraToggle.addEventListener("click", () => {
+    const isCollapsed = extraWrap.classList.toggle("collapsed");
+    extraToggle.setAttribute("aria-expanded", String(!isCollapsed));
+  });
+}
+
+/* ── Draggable layout splitter ── */
+
+const splitter = document.querySelector("#layoutSplitter");
+const contentGrid = document.querySelector(".content-grid");
+
+if (splitter && contentGrid) {
+  let dragging = false;
+
+  splitter.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    dragging = true;
+    splitter.classList.add("dragging");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  });
+
+  document.addEventListener("mousemove", (event) => {
+    if (!dragging) return;
+    const rect = contentGrid.getBoundingClientRect();
+    const offset = event.clientX - rect.left;
+    const total = rect.width;
+    const minLeft = 300;
+    const minRight = 200;
+    const splitterWidth = 8;
+    const clamped = Math.max(minLeft, Math.min(offset, total - minRight - splitterWidth));
+    contentGrid.style.gridTemplateColumns = `${clamped}px ${splitterWidth}px minmax(${minRight}px, 1fr)`;
+  });
+
+  document.addEventListener("mouseup", () => {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove("dragging");
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  });
+}
 
 loadResults();

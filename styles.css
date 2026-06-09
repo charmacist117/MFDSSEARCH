@@ -99,6 +99,60 @@ button {
   white-space: nowrap;
 }
 
+.collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 28px;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  background: var(--surface-muted);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 10px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.collapse-toggle:hover {
+  background: #e4eef2;
+  color: var(--teal-dark);
+}
+
+.collapse-icon {
+  font-size: 13px;
+  transition: transform 0.25s;
+}
+
+.collapse-toggle[aria-expanded="true"] .collapse-icon {
+  transform: rotate(180deg);
+}
+
+.extra-ingredients-wrap {
+  display: grid;
+  gap: 7px;
+  max-height: 200px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.25s ease, margin 0.3s ease;
+  margin-top: 0;
+}
+
+.extra-ingredients-wrap label {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.extra-ingredients-wrap.collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-top: -4px;
+}
+
 input,
 select {
   width: 100%;
@@ -402,8 +456,8 @@ button:focus-visible {
 
 .content-grid {
   display: grid;
-  grid-template-columns: minmax(480px, 0.95fr) minmax(360px, 1.05fr);
-  gap: 16px;
+  grid-template-columns: minmax(480px, 1.3fr) 8px minmax(280px, 0.7fr);
+  gap: 0;
   align-items: start;
 }
 
@@ -412,6 +466,36 @@ button:focus-visible {
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.splitter {
+  width: 8px;
+  cursor: col-resize;
+  background: var(--surface-muted);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  position: relative;
+  min-height: 520px;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.splitter:hover,
+.splitter.dragging {
+  background: #d0dce2;
+}
+
+.splitter::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 28px;
+  border-radius: 1px;
+  background: var(--border-strong);
+  box-shadow: -3px 0 0 var(--border-strong), 3px 0 0 var(--border-strong);
 }
 
 .result-table {
@@ -455,6 +539,17 @@ button:focus-visible {
   text-align: left;
   font-weight: 800;
   padding: 0;
+}
+
+.ingredient-lines {
+  display: grid;
+  gap: 3px;
+  min-width: 160px;
+}
+
+.ingredient-lines span {
+  display: block;
+  overflow-wrap: anywhere;
 }
 
 .table-message {
@@ -516,6 +611,7 @@ button:focus-visible {
   border: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--shadow);
+  font-size: 13px;
 }
 
 .detail-empty {
@@ -526,32 +622,33 @@ button:focus-visible {
 }
 
 .detail-head {
-  padding: 18px 20px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   background: #fbfcfd;
 }
 
 .detail-head h2 {
-  margin: 0 0 8px;
-  font-size: 20px;
+  margin: 0 0 6px;
+  font-size: 17px;
   line-height: 1.28;
 }
 
 .detail-head p {
   margin: 0;
   color: var(--muted);
+  font-size: 12px;
 }
 
 .detail-content {
   display: grid;
-  gap: 18px;
-  padding: 18px 20px 24px;
+  gap: 14px;
+  padding: 14px 16px 18px;
 }
 
 .section-title {
-  margin: 0 0 9px;
+  margin: 0 0 7px;
   color: #263941;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .info-grid {
@@ -563,16 +660,17 @@ button:focus-visible {
 
 .info-grid div {
   display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
+  grid-template-columns: 96px minmax(0, 1fr);
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
-  min-height: 36px;
+  min-height: 30px;
 }
 
 .info-grid dt,
 .info-grid dd {
   margin: 0;
-  padding: 9px 10px;
+  padding: 6px 8px;
+  font-size: 12px;
 }
 
 .info-grid dt {
@@ -615,6 +713,45 @@ button:focus-visible {
 .text-block.compact {
   max-height: 260px;
   overflow: auto;
+}
+
+.doc-html {
+  white-space: normal;
+}
+
+.doc-html p {
+  margin: 0 0 8px;
+}
+
+.doc-html div {
+  margin: 0 0 8px;
+}
+
+.doc-html table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 12px;
+  table-layout: auto;
+}
+
+.doc-html th,
+.doc-html td {
+  border: 1px solid var(--border);
+  padding: 7px 8px;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.doc-html th {
+  background: #eef3f5;
+  color: #33454d;
+  font-weight: 800;
+}
+
+.doc-html ul,
+.doc-html ol {
+  margin: 6px 0 10px 20px;
+  padding: 0;
 }
 
 .section-split {
@@ -670,6 +807,10 @@ body.table-only .detail-panel {
 
   .content-grid {
     grid-template-columns: 1fr;
+  }
+
+  .splitter {
+    display: none;
   }
 }
 
