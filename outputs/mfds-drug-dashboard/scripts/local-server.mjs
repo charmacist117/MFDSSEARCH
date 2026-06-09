@@ -31,6 +31,7 @@ const server = http.createServer(async (req, res) => {
       try {
         sendJson(res, 200, await searchMfds(Object.fromEntries(url.searchParams.entries())));
       } catch (error) {
+        console.error("Search API Failure:", error);
         sendJson(res, 502, { error: "mfds_search_failed", message: error.message });
       }
       return;
@@ -40,6 +41,7 @@ const server = http.createServer(async (req, res) => {
       try {
         sendJson(res, 200, await getMfdsDetail(url.searchParams.get("itemSeq")));
       } catch (error) {
+        console.error("Detail API Failure:", error);
         sendJson(res, 502, { error: "mfds_detail_failed", message: error.message });
       }
       return;

@@ -116,7 +116,16 @@ async function loadResults({ resetPage = false } = {}) {
 
   try {
     const response = await fetch(`/api/search?${buildSearchParams()}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`검색 요청 실패 (${response.status})`);
+    if (!response.ok) {
+      let errMsg = `검색 요청 실패 (${response.status})`;
+      try {
+        const errJson = await response.json();
+        if (errJson && errJson.message) {
+          errMsg += `: ${errJson.message}`;
+        }
+      } catch {}
+      throw new Error(errMsg);
+    }
     const payload = await response.json();
 
     state.rows = payload.items || [];

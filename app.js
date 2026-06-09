@@ -15,7 +15,8 @@ const state = {
     cancelStatus: "",
     etcOtc: "",
     makeMaterial: ""
-  }
+  },
+  columnWidths: {}
 };
 
 const form = document.querySelector("#searchForm");
@@ -67,12 +68,29 @@ function rowWithCachedDetail(row) {
   return detail ? mergeKeepNonEmpty(row, detail) : row;
 }
 
-function formatPerformance(performance) {
+function getPerformanceYears() {
+  const years = new Set();
+  state.rows.forEach((row) => {
+    const drug = rowWithCachedDetail(row);
+    if (drug.performance?.rows) {
+      drug.performance.rows.forEach((r) => {
+        if (r.year && /^\d{4}$/.test(r.year)) {
+          years.add(Number(r.year));
+        }
+      });
+    }
+  });
+  return Array.from(years).sort((a, b) => a - b);
+}
+
+function formatPerformanceYearCell(performance, year) {
   if (!performance || !performance.rows || !performance.rows.length) {
     return `<span class="muted">-</span>`;
   }
-  const sorted = [...performance.rows].sort((a, b) => Number(b.year) - Number(a.year));
-  const latest = sorted[0];
+  const row = performance.rows.find((r) => Number(r.year) === year);
+  if (!row) {
+    return `<span class="muted">-</span>`;
+  }
   const unitText = performance.unit || "";
   let symbol = "";
   let suffix = "";
@@ -89,12 +107,13 @@ function formatPerformance(performance) {
       suffix = " (천원)";
     }
   }
-  const shortType = performance.type === "생산실적" ? "생산" : performance.type === "수입실적" ? "수입" : "실적";
   const badgeClass = performance.type === "생산실적" ? "tag-prod" : "tag-imp";
+  const shortType = performance.type === "생산실적" ? "생산" : performance.type === "수입실적" ? "수입" : "실적";
+  
   return `
     <div class="perf-cell">
-      <span class="perf-badge ${badgeClass}">${shortType} (${latest.year})</span>
-      <span class="perf-amount">${symbol}${latest.amount}${suffix}</span>
+      <span class="perf-badge ${badgeClass}">${shortType}</span>
+      <span class="perf-amount">${symbol}${row.amount}${suffix}</span>
     </div>
   `;
 }
@@ -242,18 +261,39 @@ function renderResults() {
   goPage.disabled = state.listLoading;
   statusText.textContent = state.listLoading ? "목록을 불러오는 중" : state.error || state.notice || "MFDS 실시간 목록";
 
+  const perfYears = getPerformanceYears();
+  const totalCols = 7 + perfYears.length;
+
+  // Dynamic header rendering
+  const theadRow = document.querySelector(".result-table thead tr");
+  if (theadRow) {
+    const baseHeaders = ["제품명", "업체명", "주성분", "전문/일반", "허가일", "ATC", "위탁제조업체"];
+    const BASE_WIDTHS = [200, 110, 180, 80, 90, 90, 130];
+    let thHtml = "";
+    baseHeaders.forEach((h, i) => {
+      const width = state.columnWidths[h] || BASE_WIDTHS[i];
+      thHtml += `<th style="width: ${width}px;"><div class="th-wrapper">${escapeHtml(h)}</div></th>`;
+    });
+    perfYears.forEach((year) => {
+      const h = `${year}년 실적`;
+      const width = state.columnWidths[h] || 110;
+      thHtml += `<th style="width: ${width}px;"><div class="th-wrapper">${escapeHtml(h)}</div></th>`;
+    });
+    theadRow.innerHTML = thHtml;
+  }
+
   if (state.listLoading) {
-    resultBody.innerHTML = `<tr><td colspan="8" class="table-message">MFDS 목록을 불러오는 중입니다.</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="${totalCols}" class="table-message">MFDS 목록을 불러오는 중입니다.</td></tr>`;
     return;
   }
 
   if (state.error) {
-    resultBody.innerHTML = `<tr><td colspan="8" class="table-message error">${escapeHtml(state.error)}</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="${totalCols}" class="table-message error">${escapeHtml(state.error)}</td></tr>`;
     return;
   }
 
   if (!state.rows.length) {
-    resultBody.innerHTML = `<tr><td colspan="8" class="table-message">검색 결과가 없습니다.</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="${totalCols}" class="table-message">검색 결과가 없습니다.</td></tr>`;
     return;
   }
 
@@ -267,6 +307,11 @@ function renderResults() {
         .filter(Boolean)
         .map((item) => `<span>${escapeHtml(item)}</span>`)
         .join("");
+      
+      const perfCellsHtml = perfYears
+        .map((year) => `<td>${formatPerformanceYearCell(drug.performance, year)}</td>`)
+        .join("");
+
       return `
         <tr class="${selected}" data-seq="${escapeHtml(drug.itemSeq)}">
           <td>
@@ -284,11 +329,14 @@ function renderResults() {
           <td>${escapeHtml(drug.permitDate || "-")}</td>
           <td>${escapeHtml(drug.atcCode || "-")}</td>
           <td>${escapeHtml(drug.contractManufacturer || "-")}</td>
-          <td>${formatPerformance(drug.performance)}</td>
+          ${perfCellsHtml}
         </tr>
       `;
     })
     .join("");
+
+  // Initialize/refresh drag handles
+  initColumnResize();
 }
 
 function renderKeyValue(title, pairs) {
@@ -474,6 +522,7 @@ function toCsvValue(value) {
 }
 
 function downloadCsv() {
+  const perfYears = getPerformanceYears();
   const headers = [
     ["rowNumber", "순번"],
     ["itemSeq", "품목기준코드"],
@@ -491,24 +540,28 @@ function downloadCsv() {
     ["mainIngredientEng", "주성분영문명"],
     ["additives", "첨가제"],
     ["standardCode", "표준코드"],
-    ["atcCode", "ATC코드"],
-    ["performance", "생산/수입실적"]
+    ["atcCode", "ATC코드"]
   ];
+
+  perfYears.forEach((year) => {
+    headers.push([`perf_${year}`, `${year}년 실적`]);
+  });
 
   const lines = [
     headers.map(([, label]) => toCsvValue(label)).join(","),
     ...state.rows.map((row) => {
       const drug = rowWithCachedDetail(row);
       return headers.map(([key]) => {
-        if (key === "performance") {
+        if (key.startsWith("perf_")) {
+          const year = Number(key.split("_")[1]);
           const perf = drug.performance;
           if (!perf || !perf.rows || !perf.rows.length) return toCsvValue("-");
-          const sorted = [...perf.rows].sort((a, b) => Number(b.year) - Number(a.year));
-          const latest = sorted[0];
+          const r = perf.rows.find((item) => Number(item.year) === year);
+          if (!r) return toCsvValue("-");
           const unitText = perf.unit || "";
           let symbol = unitText.includes("달러") || unitText.includes("$") ? "$" : "₩";
           let suffix = symbol === "₩" && unitText.includes("천원") ? " (천원)" : "";
-          return toCsvValue(`${perf.type} (${latest.year}): ${symbol}${latest.amount}${suffix}`);
+          return toCsvValue(`${perf.type}: ${symbol}${r.amount}${suffix}`);
         }
         return toCsvValue(drug[key]);
       }).join(",");
@@ -694,12 +747,15 @@ function initColumnResize() {
   ths.forEach((th, index) => {
     if (index === ths.length - 1) return;
     
-    // Create handle if it doesn't exist
-    let handle = th.querySelector(".col-resize-handle");
+    // Create handle inside .th-wrapper if it doesn't exist
+    const wrapper = th.querySelector(".th-wrapper");
+    if (!wrapper) return;
+
+    let handle = wrapper.querySelector(".col-resize-handle");
     if (!handle) {
       handle = document.createElement("div");
       handle.className = "col-resize-handle";
-      th.appendChild(handle);
+      wrapper.appendChild(handle);
     }
 
     let startX = 0;
@@ -713,10 +769,16 @@ function initColumnResize() {
       const delta = event.clientX - startX;
       const newWidth = Math.max(60, startWidth + delta);
       const consumed = newWidth - startWidth;
+      
       th.style.width = `${newWidth}px`;
+      const thName = th.textContent.trim();
+      state.columnWidths[thName] = newWidth;
+      
       if (nextTh) {
         const newNext = Math.max(40, nextStartWidth - consumed);
         nextTh.style.width = `${newNext}px`;
+        const nextThName = nextTh.textContent.trim();
+        state.columnWidths[nextThName] = newNext;
       }
     };
 
@@ -749,5 +811,4 @@ function initColumnResize() {
   });
 }
 
-initColumnResize();
 loadResults();
