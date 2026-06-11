@@ -3,6 +3,11 @@ import http from "node:http";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import dns from "node:dns";
+
+if (dns && dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder("ipv4first");
+}
 
 const require = createRequire(import.meta.url);
 const { searchMfds, getMfdsDetail } = require("../lib/mfds.js");
@@ -32,7 +37,8 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, await searchMfds(Object.fromEntries(url.searchParams.entries())));
       } catch (error) {
         console.error("Search API Failure:", error);
-        sendJson(res, 502, { error: "mfds_search_failed", message: error.message });
+        const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
+        sendJson(res, 502, { error: "mfds_search_failed", message: detailMsg });
       }
       return;
     }
@@ -42,7 +48,8 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, await getMfdsDetail(url.searchParams.get("itemSeq")));
       } catch (error) {
         console.error("Detail API Failure:", error);
-        sendJson(res, 502, { error: "mfds_detail_failed", message: error.message });
+        const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
+        sendJson(res, 502, { error: "mfds_detail_failed", message: detailMsg });
       }
       return;
     }

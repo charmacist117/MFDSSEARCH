@@ -4,7 +4,7 @@ module.exports = async function handler(req, res) {
   const itemSeq = String(req.query?.itemSeq || "");
   try {
     const payload = await getMfdsDetail(itemSeq);
-    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate=600");
+    res.setHeader("Cache-Control", "s-maxage=86400, stale-while-revalidate=604800");
     res.status(200).json(payload);
   } catch (error) {
     console.error("Detail API Failure:", error);

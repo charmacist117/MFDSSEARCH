@@ -15,7 +15,8 @@ const state = {
     cancelStatus: "",
     etcOtc: "",
     makeMaterial: ""
-  }
+  },
+  columnWidths: {}
 };
 
 const form = document.querySelector("#searchForm");
@@ -29,6 +30,16 @@ const goPage = document.querySelector("#goPage");
 const pageInput = document.querySelector("#pageInput");
 const pageInfo = document.querySelector("#pageInfo");
 const statusText = document.querySelector("#statusText");
+const workspaceTabs = document.querySelectorAll("[data-workspace-tab]");
+const searchWorkspace = document.querySelector("#searchWorkspace");
+const compareWorkspace = document.querySelector("#compareWorkspace");
+const addCompareSlotButton = document.querySelector("#addCompareSlot");
+const compareSlots = document.querySelector("#compareSlots");
+const compareSlotLimit = 5;
+let compareSlotSeed = 0;
+const compareState = {
+  slots: []
+};
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -67,12 +78,29 @@ function rowWithCachedDetail(row) {
   return detail ? mergeKeepNonEmpty(row, detail) : row;
 }
 
-function formatPerformance(performance) {
+function getPerformanceYears() {
+  const years = new Set();
+  state.rows.forEach((row) => {
+    const drug = rowWithCachedDetail(row);
+    if (drug.performance?.rows) {
+      drug.performance.rows.forEach((r) => {
+        if (r.year && /^\d{4}$/.test(r.year)) {
+          years.add(Number(r.year));
+        }
+      });
+    }
+  });
+  return Array.from(years).sort((a, b) => a - b);
+}
+
+function formatPerformanceYearCell(performance, year) {
   if (!performance || !performance.rows || !performance.rows.length) {
     return `<span class="muted">-</span>`;
   }
-  const sorted = [...performance.rows].sort((a, b) => Number(b.year) - Number(a.year));
-  const latest = sorted[0];
+  const row = performance.rows.find((r) => Number(r.year) === year);
+  if (!row) {
+    return `<span class="muted">-</span>`;
+  }
   const unitText = performance.unit || "";
   let symbol = "";
   let suffix = "";
@@ -89,12 +117,13 @@ function formatPerformance(performance) {
       suffix = " (천원)";
     }
   }
-  const shortType = performance.type === "생산실적" ? "생산" : performance.type === "수입실적" ? "수입" : "실적";
   const badgeClass = performance.type === "생산실적" ? "tag-prod" : "tag-imp";
+  const shortType = performance.type === "생산실적" ? "생산" : performance.type === "수입실적" ? "수입" : "실적";
+  
   return `
     <div class="perf-cell">
-      <span class="perf-badge ${badgeClass}">${shortType} (${latest.year})</span>
-      <span class="perf-amount">${symbol}${latest.amount}${suffix}</span>
+      <span class="perf-badge ${badgeClass}">${shortType}</span>
+      <span class="perf-amount">${symbol}${row.amount}${suffix}</span>
     </div>
   `;
 }
@@ -108,14 +137,458 @@ function buildSearchParams() {
   return params;
 }
 
+function defaultCompareFilters() {
+  return {
+    itemCategory: "",
+    cancelStatus: "",
+    etcOtc: "",
+    makeMaterial: ""
+  };
+}
+
+function defaultCompareQuery() {
+  return {
+    efficacyOperator: "AND",
+    dosageOperator: "AND",
+    precautionOperator: "AND"
+  };
+}
+
+function createCompareSlot() {
+  compareSlotSeed += 1;
+  return {
+    id: String(compareSlotSeed),
+    rows: [],
+    total: 0,
+    page: 1,
+    pageSize: 10,
+    totalPages: 1,
+    selectedSeq: "",
+    detailCache: {},
+    detailLoadingSeq: "",
+    detailHydrationGeneration: 0,
+    listLoading: false,
+    error: "",
+    notice: "",
+    filters: defaultCompareFilters(),
+    query: defaultCompareQuery(),
+    showExtra: false
+  };
+}
+
+function ensureCompareSlot() {
+  if (!compareState.slots.length) {
+    compareState.slots.push(createCompareSlot());
+  }
+}
+
+function getCompareSlot(slotId) {
+  return compareState.slots.find((slot) => slot.id === String(slotId));
+}
+
+function compareSlotTitle(slot) {
+  const index = compareState.slots.findIndex((item) => item.id === slot.id);
+  return `제품군 ${index + 1}`;
+}
+
+function syncCompareQueryFromForm(slot, formEl) {
+  if (!slot || !formEl) return;
+  slot.query = {
+    ...defaultCompareQuery(),
+    ...Object.fromEntries(new FormData(formEl).entries())
+  };
+}
+
+function compactParams(values, filters, page) {
+  const params = new URLSearchParams({ ...values, ...filters, page: String(page) });
+  for (const [key, value] of [...params.entries()]) {
+    if (value === "") params.delete(key);
+  }
+  return params;
+}
+
+function compareInput(slot, label, name, type = "text") {
+  return `
+    <label>
+      <span>${escapeHtml(label)}</span>
+      <input type="${escapeHtml(type)}" name="${escapeHtml(name)}" value="${escapeHtml(slot.query[name] || "")}" autocomplete="off">
+    </label>
+  `;
+}
+
+function compareOperator(slot, label, operatorName, queryName) {
+  const operator = slot.query[operatorName] || "AND";
+  return `
+    <label class="operator-line">
+      <span>${escapeHtml(label)}</span>
+      <select name="${escapeHtml(operatorName)}">
+        <option ${operator === "AND" ? "selected" : ""}>AND</option>
+        <option ${operator === "OR" ? "selected" : ""}>OR</option>
+      </select>
+      <input name="${escapeHtml(queryName)}" value="${escapeHtml(slot.query[queryName] || "")}" autocomplete="off">
+    </label>
+  `;
+}
+
+function compareSegmented(slot, label, field, options) {
+  return `
+    <div class="control-row">
+      <span>${escapeHtml(label)}</span>
+      <div class="segmented" data-compare-field="${escapeHtml(field)}">
+        ${options
+          .map(
+            (option) => `
+              <button type="button" class="${slot.filters[field] === option.value ? "active" : ""}" data-value="${escapeHtml(option.value)}">
+                ${escapeHtml(option.label)}
+              </button>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
+function ingredientLineHtml(value) {
+  return String(value || "-")
+    .split(/\s*[/,]\s*/)
+    .filter(Boolean)
+    .map((item) => `<span>${escapeHtml(item)}</span>`)
+    .join("") || "-";
+}
+
+function unitDoseLineHtml(value) {
+  const lines = String(value || "")
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!lines.length) return `<span class="muted">-</span>`;
+  return lines.map((item) => `<span>${escapeHtml(item)}</span>`).join("");
+}
+
+function renderCompareForm(slot) {
+  return `
+    <form class="filter-form compare-filter">
+      ${compareInput(slot, "제품명", "productName")}
+      ${compareInput(slot, "제품영문명", "productEngName")}
+      ${compareInput(slot, "업체명", "companyName")}
+      ${compareInput(slot, "업체영문명", "companyEngName")}
+      ${compareInput(slot, "위탁제조업체", "contractManufacturer")}
+      ${compareInput(slot, "성분명1", "ingredient1")}
+      ${compareInput(slot, "성분명2", "ingredient2")}
+      ${compareInput(slot, "성분명3", "ingredient3")}
+      <button type="button" class="collapse-toggle" data-compare-extra aria-expanded="${String(slot.showExtra)}">
+        <span>추가 성분 검색</span>
+        <span class="collapse-icon">▴</span>
+      </button>
+      <div class="extra-ingredients-wrap ${slot.showExtra ? "" : "collapsed"}">
+        ${compareInput(slot, "성분명4", "ingredient4")}
+        ${compareInput(slot, "성분명5", "ingredient5")}
+      </div>
+      ${compareInput(slot, "성분영문명", "ingredientEngName")}
+      ${compareInput(slot, "품목기준코드", "itemSeq")}
+      ${compareInput(slot, "표준코드", "standardCode")}
+      <label class="inline-action">
+        <span>ATC코드</span>
+        <input name="atcCode" value="${escapeHtml(slot.query.atcCode || "")}" autocomplete="off">
+        <button class="small-button" type="submit">검색</button>
+      </label>
+      ${compareSegmented(slot, "품목구분", "itemCategory", [
+        { label: "전체", value: "" },
+        { label: "의약품", value: "A0" },
+        { label: "의약외품", value: "B0" },
+        { label: "생물의약품", value: "C0" },
+        { label: "마약류", value: "F0" },
+        { label: "첨단바이오", value: "J0" },
+        { label: "한약(생약)제제", value: "E0" }
+      ])}
+      ${compareSegmented(slot, "취소/취하", "cancelStatus", [
+        { label: "전체", value: "" },
+        { label: "정상", value: "0" },
+        { label: "취하", value: "2" },
+        { label: "유효기간만료", value: "A" }
+      ])}
+      ${compareSegmented(slot, "전문/일반", "etcOtc", [
+        { label: "전체", value: "" },
+        { label: "전문", value: "02" },
+        { label: "일반", value: "01" }
+      ])}
+      ${compareSegmented(slot, "완제/원료", "makeMaterial", [
+        { label: "전체", value: "" },
+        { label: "완제", value: "01" },
+        { label: "원료", value: "03" },
+        { label: "한약재", value: "02" }
+      ])}
+      ${compareOperator(slot, "효능효과", "efficacyOperator", "efficacyQuery")}
+      ${compareOperator(slot, "용법용량", "dosageOperator", "dosageQuery")}
+      ${compareOperator(slot, "사용상의주의사항", "precautionOperator", "precautionQuery")}
+      <div class="date-block">
+        <span>허가일</span>
+        <div class="quick-dates">
+          <button type="button" data-compare-range="">전체</button>
+          <button type="button" data-compare-range="1m">1개월</button>
+          <button type="button" data-compare-range="6m">6개월</button>
+          <button type="button" data-compare-range="1y">1년</button>
+          <button type="button" data-compare-range="3y">3년</button>
+        </div>
+        <div class="date-inputs">
+          <input type="date" name="permitStart" value="${escapeHtml(slot.query.permitStart || "")}">
+          <input type="date" name="permitEnd" value="${escapeHtml(slot.query.permitEnd || "")}">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="primary" type="submit">검색</button>
+        <button class="secondary" type="button" data-compare-reset>초기화</button>
+      </div>
+    </form>
+  `;
+}
+
+function compareSelectedRow(slot) {
+  return slot.rows.find((row) => row.itemSeq === slot.selectedSeq);
+}
+
+function compareSelectedDrug(slot) {
+  return slot.detailCache[slot.selectedSeq] || compareSelectedRow(slot);
+}
+
+function renderCompareRows(slot) {
+  if (slot.listLoading) {
+    return `<tr><td colspan="6" class="table-message">목록을 불러오는 중입니다.</td></tr>`;
+  }
+  if (slot.error) {
+    return `<tr><td colspan="6" class="table-message error">${escapeHtml(slot.error)}</td></tr>`;
+  }
+  if (!slot.rows.length) {
+    return `<tr><td colspan="6" class="table-message">검색 조건을 입력하고 검색하세요.</td></tr>`;
+  }
+  return slot.rows
+    .map((row) => {
+      const drug = slot.detailCache[row.itemSeq] ? mergeKeepNonEmpty(row, slot.detailCache[row.itemSeq]) : row;
+      const selected = drug.itemSeq === slot.selectedSeq ? "selected" : "";
+      return `
+        <tr class="${selected}" data-compare-select="${escapeHtml(drug.itemSeq)}">
+          <td>
+            <button type="button">${escapeHtml(drug.itemName || "-")}</button>
+            <div class="tag-row">
+              <span class="tag blue">${escapeHtml(drug.itemSeq || "-")}</span>
+              <span class="tag">${escapeHtml(drug.itemCategory || "-")}</span>
+            </div>
+          </td>
+          <td>${escapeHtml(drug.entpName || "-")}</td>
+          <td><div class="ingredient-lines">${ingredientLineHtml(drug.mainIngredient)}</div></td>
+          <td><div class="unit-dose-lines">${unitDoseLineHtml(drug.unitDose)}</div></td>
+          <td>${escapeHtml(drug.etcOtc || "-")}</td>
+          <td>${escapeHtml(drug.permitDate || "-")}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function renderCompareDetail(slot) {
+  const drug = compareSelectedDrug(slot);
+  if (slot.detailLoadingSeq === slot.selectedSeq) {
+    return `<div class="compare-detail-empty">상세정보를 불러오는 중입니다.</div>`;
+  }
+  if (!drug) {
+    return `<div class="compare-detail-empty">검색 결과에서 비교할 제품을 선택하세요.</div>`;
+  }
+
+  const basicPairs = [
+    ["제품명", drug.itemName],
+    ["업체명", drug.entpName],
+    ["위탁제조업체", drug.contractManufacturer],
+    ["주성분", drug.mainIngredient],
+    ["단위용량", drug.unitDose],
+    ["전문/일반", drug.etcOtc],
+    ["허가일", drug.permitDate],
+    ["ATC", drug.atcCode],
+    ["품목기준코드", drug.itemSeq],
+    ["취소/취하", drug.cancelStatus],
+    ["완제/원료", drug.makeMaterial]
+  ];
+
+  return `
+    <article class="compare-detail-panel">
+      <header>
+        <h3>${escapeHtml(drug.itemName || "-")}</h3>
+        <p>${escapeHtml(drug.entpName || "")}</p>
+      </header>
+      <div class="compare-detail-content">
+        ${drug.detailError ? `
+          <div class="table-message error detail-error">
+            <span>${escapeHtml(drug.detailError)}</span>
+            <button type="button" data-compare-retry-detail="${escapeHtml(drug.itemSeq || slot.selectedSeq)}">다시 시도</button>
+          </div>
+        ` : ""}
+        ${renderKeyValue("기본정보", basicPairs)}
+        ${renderTextSection("효능효과", drug.efficacy, true)}
+        ${renderTextSection("용법용량", drug.dosage, true)}
+      </div>
+    </article>
+  `;
+}
+
+function renderCompareSlot(slot) {
+  const index = compareState.slots.findIndex((item) => item.id === slot.id);
+  const pageStart = slot.total && slot.rows.length ? (slot.page - 1) * slot.pageSize + 1 : 0;
+  const pageEnd = slot.total && slot.rows.length ? pageStart + slot.rows.length - 1 : 0;
+  return `
+    <section class="compare-slot ${index === 0 ? "active" : ""}" data-slot-id="${escapeHtml(slot.id)}">
+      <header class="compare-slot-head">
+        <div>
+          <h2>${escapeHtml(compareSlotTitle(slot))}</h2>
+          <p>총 ${slot.total.toLocaleString("ko-KR")}건${slot.rows.length ? ` (${pageStart.toLocaleString("ko-KR")}-${pageEnd.toLocaleString("ko-KR")})` : ""}</p>
+        </div>
+        ${compareState.slots.length > 1 ? `<button type="button" data-compare-remove aria-label="${escapeHtml(compareSlotTitle(slot))} 닫기">×</button>` : ""}
+      </header>
+      ${renderCompareForm(slot)}
+      ${slot.notice ? `<p class="compare-notice">${escapeHtml(slot.notice)}</p>` : ""}
+      <div class="compare-pager">
+        <button type="button" data-compare-page="prev" ${slot.page <= 1 ? "disabled" : ""}>이전</button>
+        <span>${slot.page.toLocaleString("ko-KR")} / ${slot.totalPages.toLocaleString("ko-KR")}</span>
+        <button type="button" data-compare-page="next" ${slot.page >= slot.totalPages ? "disabled" : ""}>다음</button>
+      </div>
+      <div class="compare-result-wrap">
+        <table class="result-table compare-result-table">
+          <thead>
+            <tr>
+              <th>제품명</th>
+              <th>업체명</th>
+              <th>주성분</th>
+              <th>단위용량</th>
+              <th>전문/일반</th>
+              <th>허가일</th>
+            </tr>
+          </thead>
+          <tbody>${renderCompareRows(slot)}</tbody>
+        </table>
+      </div>
+      ${renderCompareDetail(slot)}
+    </section>
+  `;
+}
+
+function renderCompareSlots() {
+  if (!compareSlots) return;
+  compareSlots.innerHTML = compareState.slots.map((slot) => renderCompareSlot(slot)).join("");
+  if (addCompareSlotButton) {
+    addCompareSlotButton.disabled = compareState.slots.length >= compareSlotLimit;
+  }
+}
+
+async function loadCompareResults(slotId, { resetPage = false } = {}) {
+  const slot = getCompareSlot(slotId);
+  if (!slot) return;
+  const slotEl = compareSlots.querySelector(`[data-slot-id="${CSS.escape(slot.id)}"]`);
+  const formEl = slotEl?.querySelector("form");
+  syncCompareQueryFromForm(slot, formEl);
+  if (resetPage) slot.page = 1;
+  slot.listLoading = true;
+  slot.detailHydrationGeneration += 1;
+  slot.error = "";
+  slot.notice = "";
+  renderCompareSlots();
+
+  try {
+    const response = await fetch(`/api/search?${compactParams(slot.query, slot.filters, slot.page)}`);
+    if (!response.ok) {
+      let errMsg = `검색 요청 실패 (${response.status})`;
+      try {
+        const errJson = await response.json();
+        if (errJson?.message) errMsg += `: ${errJson.message}`;
+      } catch {}
+      throw new Error(errMsg);
+    }
+    const payload = await response.json();
+    slot.rows = payload.items || [];
+    slot.total = Number(payload.total || 0);
+    slot.notice = payload.notice || "";
+    slot.page = Number(payload.page || slot.page);
+    slot.pageSize = Number(payload.pageSize || slot.rows.length || 10);
+    slot.totalPages = Math.max(Number(payload.totalPages || 1), 1);
+    slot.selectedSeq = slot.rows[0]?.itemSeq || "";
+    slot.listLoading = false;
+  } catch (error) {
+    slot.rows = [];
+    slot.total = 0;
+    slot.selectedSeq = "";
+    slot.listLoading = false;
+    slot.error = error.message;
+  }
+  renderCompareSlots();
+  setTimeout(() => hydrateCompareSlotDetails(slot.id, slot.detailHydrationGeneration), 0);
+}
+
+async function loadCompareDetail(slotId, itemSeq, { force = false } = {}) {
+  const slot = getCompareSlot(slotId);
+  if (!slot || !itemSeq) return;
+  const cached = slot.detailCache[itemSeq];
+  if (cached && !cached.detailError && !force) {
+    renderCompareSlots();
+    return;
+  }
+  if (force || cached?.detailError) {
+    delete slot.detailCache[itemSeq];
+  }
+
+  slot.selectedSeq = itemSeq;
+  slot.detailLoadingSeq = itemSeq;
+  renderCompareSlots();
+
+  try {
+    const payload = await requestDetail(itemSeq);
+    slot.detailCache[itemSeq] = mergeKeepNonEmpty(compareSelectedRow(slot), payload);
+  } catch (error) {
+    slot.detailCache[itemSeq] = { ...compareSelectedRow(slot), detailError: error.message };
+  } finally {
+    if (slot.detailLoadingSeq === itemSeq) slot.detailLoadingSeq = "";
+    renderCompareSlots();
+  }
+}
+
+async function hydrateCompareSlotDetails(slotId, generation) {
+  const slot = getCompareSlot(slotId);
+  if (!slot || generation !== slot.detailHydrationGeneration) return;
+  const seqs = slot.rows
+    .map((row) => row.itemSeq)
+    .filter((seq) => seq && !slot.detailCache[seq]?.unitDose);
+  if (!seqs.length) return;
+
+  const concurrency = 2;
+  let index = 0;
+
+  async function worker() {
+    while (index < seqs.length) {
+      const currentSlot = getCompareSlot(slotId);
+      if (!currentSlot || generation !== currentSlot.detailHydrationGeneration) return;
+      const itemSeq = seqs[index];
+      index += 1;
+      try {
+        const payload = await requestDetail(itemSeq);
+        const latestSlot = getCompareSlot(slotId);
+        if (!latestSlot || generation !== latestSlot.detailHydrationGeneration) return;
+        const row = latestSlot.rows.find((item) => item.itemSeq === itemSeq);
+        latestSlot.detailCache[itemSeq] = mergeKeepNonEmpty(row, payload);
+        syncVisibleCompareForms();
+        renderCompareSlots();
+      } catch {}
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, seqs.length) }, worker));
+}
+
 async function loadResults({ resetPage = false } = {}) {
   if (resetPage) state.page = 1;
   state.listLoading = true;
   state.error = "";
+  preloadGeneration += 1;
   render();
 
   try {
-    const response = await fetch(`/api/search?${buildSearchParams()}`, { cache: "no-store" });
+    const response = await fetch(`/api/search?${buildSearchParams()}`);
     if (!response.ok) {
       let errMsg = `검색 요청 실패 (${response.status})`;
       try {
@@ -137,8 +610,7 @@ async function loadResults({ resetPage = false } = {}) {
     state.selectedSeq = state.rows[0]?.itemSeq || "";
     state.listLoading = false;
     render();
-
-    preloadAllDetails();
+    setTimeout(() => hydrateCurrentPageDetails(preloadGeneration), 0);
   } catch (error) {
     state.rows = [];
     state.total = 0;
@@ -197,9 +669,7 @@ async function preloadAllDetails() {
 async function fetchAndCacheDetail(itemSeq) {
   if (state.detailCache[itemSeq]) return;
   try {
-    const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
-    const payload = await response.json();
+    const payload = await requestDetail(itemSeq);
     const row = state.rows.find((r) => r.itemSeq === itemSeq);
     state.detailCache[itemSeq] = mergeKeepNonEmpty(row, payload);
   } catch (error) {
@@ -208,19 +678,55 @@ async function fetchAndCacheDetail(itemSeq) {
   }
 }
 
-async function loadDetail(itemSeq) {
-  if (!itemSeq || state.detailCache[itemSeq]) {
+async function requestDetail(itemSeq) {
+  const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`);
+  if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
+  return response.json();
+}
+
+async function hydrateCurrentPageDetails(generation = preloadGeneration) {
+  const seqs = state.rows
+    .map((row) => row.itemSeq)
+    .filter((seq) => seq && !state.detailCache[seq]?.unitDose);
+  if (!seqs.length) return;
+
+  const concurrency = 2;
+  let index = 0;
+
+  async function worker() {
+    while (index < seqs.length) {
+      if (generation !== preloadGeneration) return;
+      const itemSeq = seqs[index];
+      index += 1;
+      try {
+        const payload = await requestDetail(itemSeq);
+        if (generation !== preloadGeneration) return;
+        const row = state.rows.find((item) => item.itemSeq === itemSeq);
+        state.detailCache[itemSeq] = mergeKeepNonEmpty(row, payload);
+        render();
+      } catch {}
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, seqs.length) }, worker));
+}
+
+async function loadDetail(itemSeq, { force = false } = {}) {
+  const cached = state.detailCache[itemSeq];
+  if (!itemSeq || (cached && !cached.detailError && !force)) {
     render();
     return;
+  }
+
+  if (force || cached?.detailError) {
+    delete state.detailCache[itemSeq];
   }
 
   state.detailLoadingSeq = itemSeq;
   render();
 
   try {
-    const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
-    const payload = await response.json();
+    const payload = await requestDetail(itemSeq);
     state.detailCache[itemSeq] = mergeKeepNonEmpty(selectedRow(), payload);
   } catch (error) {
     state.detailCache[itemSeq] = { ...selectedRow(), detailError: error.message };
@@ -242,18 +748,39 @@ function renderResults() {
   goPage.disabled = state.listLoading;
   statusText.textContent = state.listLoading ? "목록을 불러오는 중" : state.error || state.notice || "MFDS 실시간 목록";
 
+  const perfYears = getPerformanceYears();
+  const totalCols = 8 + perfYears.length;
+
+  // Dynamic header rendering
+  const theadRow = document.querySelector(".result-table thead tr");
+  if (theadRow) {
+    const baseHeaders = ["제품명", "업체명", "주성분", "단위용량", "전문/일반", "허가일", "ATC", "위탁제조업체"];
+    const BASE_WIDTHS = [200, 110, 180, 170, 80, 90, 90, 130];
+    let thHtml = "";
+    baseHeaders.forEach((h, i) => {
+      const width = state.columnWidths[h] || BASE_WIDTHS[i];
+      thHtml += `<th style="width: ${width}px;"><div class="th-wrapper">${escapeHtml(h)}</div></th>`;
+    });
+    perfYears.forEach((year) => {
+      const h = `${year}년 실적`;
+      const width = state.columnWidths[h] || 110;
+      thHtml += `<th style="width: ${width}px;"><div class="th-wrapper">${escapeHtml(h)}</div></th>`;
+    });
+    theadRow.innerHTML = thHtml;
+  }
+
   if (state.listLoading) {
-    resultBody.innerHTML = `<tr><td colspan="8" class="table-message">MFDS 목록을 불러오는 중입니다.</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="${totalCols}" class="table-message">MFDS 목록을 불러오는 중입니다.</td></tr>`;
     return;
   }
 
   if (state.error) {
-    resultBody.innerHTML = `<tr><td colspan="8" class="table-message error">${escapeHtml(state.error)}</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="${totalCols}" class="table-message error">${escapeHtml(state.error)}</td></tr>`;
     return;
   }
 
   if (!state.rows.length) {
-    resultBody.innerHTML = `<tr><td colspan="8" class="table-message">검색 결과가 없습니다.</td></tr>`;
+    resultBody.innerHTML = `<tr><td colspan="${totalCols}" class="table-message">검색 결과가 없습니다.</td></tr>`;
     return;
   }
 
@@ -267,6 +794,11 @@ function renderResults() {
         .filter(Boolean)
         .map((item) => `<span>${escapeHtml(item)}</span>`)
         .join("");
+      
+      const perfCellsHtml = perfYears
+        .map((year) => `<td>${formatPerformanceYearCell(drug.performance, year)}</td>`)
+        .join("");
+
       return `
         <tr class="${selected}" data-seq="${escapeHtml(drug.itemSeq)}">
           <td>
@@ -280,15 +812,19 @@ function renderResults() {
           </td>
           <td>${escapeHtml(drug.entpName || "-")}</td>
           <td><div class="ingredient-lines">${ingredientLines || "-"}</div></td>
+          <td><div class="unit-dose-lines">${unitDoseLineHtml(drug.unitDose)}</div></td>
           <td>${escapeHtml(drug.etcOtc || "-")}</td>
           <td>${escapeHtml(drug.permitDate || "-")}</td>
           <td>${escapeHtml(drug.atcCode || "-")}</td>
           <td>${escapeHtml(drug.contractManufacturer || "-")}</td>
-          <td>${formatPerformance(drug.performance)}</td>
+          ${perfCellsHtml}
         </tr>
       `;
     })
     .join("");
+
+  // Initialize/refresh drag handles
+  initColumnResize();
 }
 
 function renderKeyValue(title, pairs) {
@@ -384,6 +920,8 @@ function renderDetail() {
     ["모양", drug.shape],
     ["업체명", drug.entpName],
     ["위탁제조업체", drug.contractManufacturer],
+    ["주성분", drug.mainIngredient],
+    ["단위용량", drug.unitDose],
     ["전문/일반", drug.etcOtc],
     ["허가일", drug.permitDate],
     ["품목기준코드", drug.itemSeq],
@@ -420,7 +958,12 @@ function renderDetail() {
       </div>
     </header>
     <div class="detail-content">
-      ${drug.detailError ? `<p class="table-message error">${escapeHtml(drug.detailError)}</p>` : ""}
+      ${drug.detailError ? `
+        <div class="table-message error detail-error">
+          <span>${escapeHtml(drug.detailError)}</span>
+          <button type="button" data-retry-detail="${escapeHtml(drug.itemSeq || state.selectedSeq)}">다시 시도</button>
+        </div>
+      ` : ""}
       ${renderKeyValue("기본정보", basicPairs)}
       ${renderTable("원료약품 및 분량", drug.ingredients || [], [
         { key: "basis", label: "기준" },
@@ -474,6 +1017,7 @@ function toCsvValue(value) {
 }
 
 function downloadCsv() {
+  const perfYears = getPerformanceYears();
   const headers = [
     ["rowNumber", "순번"],
     ["itemSeq", "품목기준코드"],
@@ -482,33 +1026,38 @@ function downloadCsv() {
     ["entpName", "업체명"],
     ["entpEngName", "업체영문명"],
     ["contractManufacturer", "위탁제조업체"],
+    ["mainIngredient", "주성분"],
+    ["unitDose", "단위용량"],
     ["etcOtc", "전문/일반"],
     ["permitDate", "허가일"],
     ["itemCategory", "품목구분"],
     ["cancelStatus", "취소/취하"],
     ["makeMaterial", "완제/원료"],
-    ["mainIngredient", "주성분"],
     ["mainIngredientEng", "주성분영문명"],
     ["additives", "첨가제"],
     ["standardCode", "표준코드"],
-    ["atcCode", "ATC코드"],
-    ["performance", "생산/수입실적"]
+    ["atcCode", "ATC코드"]
   ];
+
+  perfYears.forEach((year) => {
+    headers.push([`perf_${year}`, `${year}년 실적`]);
+  });
 
   const lines = [
     headers.map(([, label]) => toCsvValue(label)).join(","),
     ...state.rows.map((row) => {
       const drug = rowWithCachedDetail(row);
       return headers.map(([key]) => {
-        if (key === "performance") {
+        if (key.startsWith("perf_")) {
+          const year = Number(key.split("_")[1]);
           const perf = drug.performance;
           if (!perf || !perf.rows || !perf.rows.length) return toCsvValue("-");
-          const sorted = [...perf.rows].sort((a, b) => Number(b.year) - Number(a.year));
-          const latest = sorted[0];
+          const r = perf.rows.find((item) => Number(item.year) === year);
+          if (!r) return toCsvValue("-");
           const unitText = perf.unit || "";
           let symbol = unitText.includes("달러") || unitText.includes("$") ? "$" : "₩";
           let suffix = symbol === "₩" && unitText.includes("천원") ? " (천원)" : "";
-          return toCsvValue(`${perf.type} (${latest.year}): ${symbol}${latest.amount}${suffix}`);
+          return toCsvValue(`${perf.type}: ${symbol}${r.amount}${suffix}`);
         }
         return toCsvValue(drug[key]);
       }).join(",");
@@ -535,10 +1084,10 @@ form.addEventListener("reset", () => {
     etcOtc: "",
     makeMaterial: ""
   };
-  document.querySelectorAll(".segmented button").forEach((button) => {
+  form.querySelectorAll(".segmented button").forEach((button) => {
     button.classList.toggle("active", button.dataset.value === "");
   });
-  document.querySelectorAll(".quick-dates button").forEach((button) => {
+  form.querySelectorAll(".quick-dates button").forEach((button) => {
     button.classList.toggle("active", button.dataset.range === "");
   });
   const extraWrap = document.querySelector("#extraIngredientWrap");
@@ -550,7 +1099,7 @@ form.addEventListener("reset", () => {
   setTimeout(() => loadResults({ resetPage: true }), 0);
 });
 
-document.querySelectorAll(".segmented").forEach((group) => {
+form.querySelectorAll(".segmented").forEach((group) => {
   group.addEventListener("click", (event) => {
     const button = event.target.closest("button");
     if (!button) return;
@@ -560,9 +1109,9 @@ document.querySelectorAll(".segmented").forEach((group) => {
   });
 });
 
-document.querySelectorAll(".quick-dates button").forEach((button) => {
+form.querySelectorAll(".quick-dates button").forEach((button) => {
   button.addEventListener("click", () => {
-    document.querySelectorAll(".quick-dates button").forEach((item) => item.classList.remove("active"));
+    form.querySelectorAll(".quick-dates button").forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
 
     const endInput = form.elements.permitEnd;
@@ -593,6 +1142,170 @@ resultBody.addEventListener("click", (event) => {
   render();
   loadDetail(itemSeq);
 });
+
+detailPanel.addEventListener("click", (event) => {
+  const retryButton = event.target.closest("[data-retry-detail]");
+  if (!retryButton) return;
+  const itemSeq = retryButton.dataset.retryDetail || state.selectedSeq;
+  state.selectedSeq = itemSeq;
+  loadDetail(itemSeq, { force: true });
+});
+
+function setWorkspaceTab(tabName) {
+  workspaceTabs.forEach((button) => {
+    const active = button.dataset.workspaceTab === tabName;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  if (searchWorkspace) searchWorkspace.hidden = tabName !== "search";
+  if (compareWorkspace) compareWorkspace.hidden = tabName !== "compare";
+  document.body.classList.toggle("compare-mode", tabName === "compare");
+  if (tabName === "compare") {
+    ensureCompareSlot();
+    renderCompareSlots();
+  }
+}
+
+function syncVisibleCompareForms() {
+  if (!compareSlots) return;
+  compareSlots.querySelectorAll("[data-slot-id]").forEach((slotEl) => {
+    const slot = getCompareSlot(slotEl.dataset.slotId);
+    syncCompareQueryFromForm(slot, slotEl.querySelector("form"));
+  });
+}
+
+function applyRangeToForm(formEl, range) {
+  const endInput = formEl?.elements?.permitEnd;
+  const startInput = formEl?.elements?.permitStart;
+  if (!startInput || !endInput) return;
+  if (!range) {
+    startInput.value = "";
+    endInput.value = "";
+    return;
+  }
+
+  const end = new Date();
+  const start = new Date(end);
+  if (range === "1m") start.setMonth(start.getMonth() - 1);
+  if (range === "6m") start.setMonth(start.getMonth() - 6);
+  if (range === "1y") start.setFullYear(start.getFullYear() - 1);
+  if (range === "3y") start.setFullYear(start.getFullYear() - 3);
+  startInput.value = start.toISOString().slice(0, 10);
+  endInput.value = end.toISOString().slice(0, 10);
+}
+
+workspaceTabs.forEach((button) => {
+  button.addEventListener("click", () => {
+    setWorkspaceTab(button.dataset.workspaceTab);
+  });
+});
+
+if (addCompareSlotButton) {
+  addCompareSlotButton.addEventListener("click", () => {
+    if (compareState.slots.length >= compareSlotLimit) return;
+    syncVisibleCompareForms();
+    compareState.slots.push(createCompareSlot());
+    renderCompareSlots();
+  });
+}
+
+if (compareSlots) {
+  compareSlots.addEventListener("submit", (event) => {
+    const formEl = event.target.closest("form.compare-filter");
+    if (!formEl) return;
+    event.preventDefault();
+    const slotEl = formEl.closest("[data-slot-id]");
+    loadCompareResults(slotEl?.dataset.slotId, { resetPage: true });
+  });
+
+  compareSlots.addEventListener("click", (event) => {
+    const slotEl = event.target.closest("[data-slot-id]");
+    if (!slotEl) return;
+    const slot = getCompareSlot(slotEl.dataset.slotId);
+    if (!slot) return;
+
+    const removeButton = event.target.closest("[data-compare-remove]");
+    if (removeButton) {
+      syncVisibleCompareForms();
+      compareState.slots = compareState.slots.filter((item) => item.id !== slot.id);
+      ensureCompareSlot();
+      renderCompareSlots();
+      return;
+    }
+
+    const retryButton = event.target.closest("[data-compare-retry-detail]");
+    if (retryButton) {
+      loadCompareDetail(slot.id, retryButton.dataset.compareRetryDetail || slot.selectedSeq, { force: true });
+      return;
+    }
+
+    const selectedRow = event.target.closest("[data-compare-select]");
+    if (selectedRow) {
+      slot.selectedSeq = selectedRow.dataset.compareSelect;
+      renderCompareSlots();
+      loadCompareDetail(slot.id, slot.selectedSeq);
+      return;
+    }
+
+    const pageButton = event.target.closest("[data-compare-page]");
+    if (pageButton) {
+      if (pageButton.disabled) return;
+      syncCompareQueryFromForm(slot, slotEl.querySelector("form"));
+      if (pageButton.dataset.comparePage === "prev") slot.page = Math.max(1, slot.page - 1);
+      if (pageButton.dataset.comparePage === "next") slot.page = Math.min(slot.totalPages, slot.page + 1);
+      loadCompareResults(slot.id);
+      return;
+    }
+
+    const resetButton = event.target.closest("[data-compare-reset]");
+    if (resetButton) {
+      Object.assign(slot, {
+        rows: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+        totalPages: 1,
+        selectedSeq: "",
+        detailCache: {},
+        detailLoadingSeq: "",
+        detailHydrationGeneration: slot.detailHydrationGeneration + 1,
+        listLoading: false,
+        error: "",
+        notice: "",
+        filters: defaultCompareFilters(),
+        query: defaultCompareQuery(),
+        showExtra: false
+      });
+      renderCompareSlots();
+      return;
+    }
+
+    const extraButton = event.target.closest("[data-compare-extra]");
+    if (extraButton) {
+      slot.showExtra = !slot.showExtra;
+      extraButton.setAttribute("aria-expanded", String(slot.showExtra));
+      slotEl.querySelector(".extra-ingredients-wrap")?.classList.toggle("collapsed", !slot.showExtra);
+      return;
+    }
+
+    const segmentButton = event.target.closest("[data-compare-field] button");
+    if (segmentButton) {
+      const group = segmentButton.closest("[data-compare-field]");
+      group.querySelectorAll("button").forEach((button) => button.classList.remove("active"));
+      segmentButton.classList.add("active");
+      slot.filters[group.dataset.compareField] = segmentButton.dataset.value;
+      return;
+    }
+
+    const rangeButton = event.target.closest("[data-compare-range]");
+    if (rangeButton) {
+      const rangeGroup = rangeButton.closest(".quick-dates");
+      rangeGroup.querySelectorAll("button").forEach((button) => button.classList.remove("active"));
+      rangeButton.classList.add("active");
+      applyRangeToForm(slotEl.querySelector("form"), rangeButton.dataset.compareRange);
+    }
+  });
+}
 
 document.querySelectorAll(".view-options button").forEach((button) => {
   button.addEventListener("click", () => {
@@ -694,12 +1407,15 @@ function initColumnResize() {
   ths.forEach((th, index) => {
     if (index === ths.length - 1) return;
     
-    // Create handle if it doesn't exist
-    let handle = th.querySelector(".col-resize-handle");
+    // Create handle inside .th-wrapper if it doesn't exist
+    const wrapper = th.querySelector(".th-wrapper");
+    if (!wrapper) return;
+
+    let handle = wrapper.querySelector(".col-resize-handle");
     if (!handle) {
       handle = document.createElement("div");
       handle.className = "col-resize-handle";
-      th.appendChild(handle);
+      wrapper.appendChild(handle);
     }
 
     let startX = 0;
@@ -713,10 +1429,16 @@ function initColumnResize() {
       const delta = event.clientX - startX;
       const newWidth = Math.max(60, startWidth + delta);
       const consumed = newWidth - startWidth;
+      
       th.style.width = `${newWidth}px`;
+      const thName = th.textContent.trim();
+      state.columnWidths[thName] = newWidth;
+      
       if (nextTh) {
         const newNext = Math.max(40, nextStartWidth - consumed);
         nextTh.style.width = `${newNext}px`;
+        const nextThName = nextTh.textContent.trim();
+        state.columnWidths[nextThName] = newNext;
       }
     };
 
@@ -749,5 +1471,4 @@ function initColumnResize() {
   });
 }
 
-initColumnResize();
 loadResults();
