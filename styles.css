@@ -46,34 +46,39 @@ button {
   top: 1mm;
   z-index: 40;
   display: flex;
-  border: 1px solid var(--border);
-  border-bottom: 0;
-  background: var(--surface);
+  background: #102a35;
+  border-bottom: 3px solid var(--teal);
 }
 
 .category-tab {
   min-width: 170px;
   height: 40px;
   border: 0;
-  border-right: 1px solid var(--border);
-  background: #f5f8f9;
-  color: var(--muted);
-  font-weight: 900;
+  border-right: 1px solid #163644;
+  background: transparent;
+  color: #90a4ae;
+  font-weight: 700;
+  transition: background 0.15s, color 0.15s;
+}
+
+.category-tab:hover {
+  background: #163644;
+  color: #fff;
 }
 
 .category-tab.active {
-  background: #fff;
-  color: var(--teal-dark);
-  box-shadow: inset 0 -3px 0 var(--teal);
+  background: var(--teal);
+  color: #fff;
+  font-weight: 800;
 }
 
 .workspace-tabs {
   position: sticky;
-  top: calc(1mm + 40px);
+  top: calc(1mm + 43px);
   z-index: 30;
   display: flex;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: #f8fafc;
 }
 
 .workspace-tab {
@@ -81,9 +86,14 @@ button {
   height: 46px;
   border: 0;
   border-right: 1px solid var(--border);
-  background: #eef3f5;
+  background: #f1f5f9;
   color: var(--muted);
-  font-weight: 900;
+  font-weight: 700;
+  transition: background 0.15s;
+}
+
+.workspace-tab:hover {
+  background: #e2e8f0;
 }
 
 .workspace-tab.active {
@@ -99,13 +109,13 @@ button {
 .app-shell {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
-  min-height: calc(100vh - 86px - 1mm);
+  min-height: calc(100vh - 89px - 1mm);
 }
 
 .search-panel {
   position: sticky;
-  top: calc(1mm + 86px);
-  height: calc(100vh - 86px - 1mm);
+  top: calc(1mm + 89px);
+  height: calc(100vh - 89px - 1mm);
   overflow: auto;
   border-right: 1px solid var(--border);
   background: var(--surface);
@@ -416,7 +426,7 @@ button:focus-visible {
 }
 
 .compare-workspace {
-  min-height: calc(100vh - 46px);
+  min-height: calc(100vh - 89px);
   padding: 24px;
 }
 
@@ -610,13 +620,13 @@ button:focus-visible {
 .external-workspace {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
-  min-height: calc(100vh - 40px - 1mm);
+  min-height: calc(100vh - 43px - 1mm);
 }
 
 .external-filter-panel {
   position: sticky;
-  top: calc(1mm + 40px);
-  height: calc(100vh - 40px - 1mm);
+  top: calc(1mm + 43px);
+  height: calc(100vh - 43px - 1mm);
   overflow: auto;
   border-right: 1px solid var(--border);
   background: var(--surface);
@@ -663,6 +673,13 @@ button:focus-visible {
   padding: 0 8px;
 }
 
+.external-content-grid {
+  display: grid;
+  grid-template-columns: minmax(460px, 1.15fr) minmax(320px, 0.85fr);
+  gap: 8px;
+  align-items: start;
+}
+
 .external-table-wrap {
   overflow: auto;
   border: 1px solid var(--border);
@@ -670,13 +687,26 @@ button:focus-visible {
   box-shadow: var(--shadow);
 }
 
+.external-detail-panel {
+  min-height: 520px;
+}
+
+.external-detail-panel .info-grid {
+  grid-template-columns: 1fr;
+}
+
 .external-result-table {
   min-width: 780px;
 }
 
 .table-link {
+  border: 0;
+  background: transparent;
   color: var(--teal-dark);
+  cursor: pointer;
   font-weight: 800;
+  padding: 0;
+  text-align: left;
   text-decoration: none;
 }
 
@@ -1222,6 +1252,10 @@ body.table-only .detail-panel {
   }
 
   .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .external-content-grid {
     grid-template-columns: 1fr;
   }
 

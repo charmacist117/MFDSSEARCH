@@ -46,8 +46,8 @@ const compareState = {
   slots: []
 };
 const externalStates = {
-  vet: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false },
-  aquatic: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false }
+  vet: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {} },
+  aquatic: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {} }
 };
 
 function escapeHtml(value) {
@@ -236,7 +236,9 @@ function externalDashboard(kind) {
     pageInfo: document.querySelector(`#${prefix}PageInfo`),
     prev: document.querySelector(`#${prefix}PrevPage`),
     next: document.querySelector(`#${prefix}NextPage`),
+    detailPanel: document.querySelector(`#${prefix}DetailPanel`),
     endpoint: kind === "vet" ? "/api/vet-search" : "/api/aquatic-search",
+    detailEndpoint: "/api/public-detail",
     defaultStatus: kind === "vet" ? "동물용의약품 아지(AZ)트 목록" : "국립수산물품질관리원 약품편람",
     columns:
       kind === "vet"
@@ -268,10 +270,100 @@ function buildExternalParams(dashboard) {
   return params;
 }
 
+function externalRowKey(row, index = 0) {
+  return row.detailKey || row.sourceUrl || [row.permitNumber, row.itemName, row.entpName, row.permitDate, index].filter(Boolean).join("|") || String(index);
+}
+
+function externalSelectedRow(kind) {
+  const dashboard = externalDashboard(kind);
+  return dashboard.state.rows.find((row, index) => externalRowKey(row, index) === dashboard.state.selectedKey);
+}
+
+function externalBasicPairs(kind, row) {
+  if (kind === "vet") {
+    return [
+      ["제품명", row.itemName],
+      ["제품영문명", row.itemEngName],
+      ["업체명", row.entpName],
+      ["품목구분", row.itemCategory],
+      ["허가일", row.permitDate],
+      ["비고", row.note]
+    ];
+  }
+
+  return [
+    ["허가번호", row.permitNumber],
+    ["제품명", row.itemName],
+    ["업체명", row.entpName],
+    ["제형", row.dosageForm],
+    ["투여경로", row.route],
+    ["최초허가일", row.firstPermitDate],
+    ["최종허가일", row.permitDate],
+    ["허가조건", row.condition],
+    ["비고", row.note]
+  ];
+}
+
+function renderExternalTablePreview(rows) {
+  if (!rows?.length) return "";
+  const maxColumnCount = Math.max(...rows.map((row) => row.length));
+  const columns = Array.from({ length: maxColumnCount }, (_, index) => ({ key: String(index), label: `항목 ${index + 1}` }));
+  const normalized = rows.map((row) =>
+    columns.reduce((acc, column, index) => {
+      acc[column.key] = row[index] || "";
+      return acc;
+    }, {})
+  );
+  return renderTable("원문 표", normalized, columns);
+}
+
+function renderExternalDetail(kind) {
+  const dashboard = externalDashboard(kind);
+  const { state } = dashboard;
+  const panel = dashboard.detailPanel;
+  if (!panel) return;
+
+  if (state.loading) {
+    panel.innerHTML = `<div class="detail-empty">목록을 불러오는 중입니다.</div>`;
+    return;
+  }
+
+  const row = externalSelectedRow(kind);
+  if (!row) {
+    panel.innerHTML = `<div class="detail-empty">검색 결과에서 제품을 선택하세요.</div>`;
+    return;
+  }
+
+  const detail = state.detailCache[state.selectedKey] || {};
+  const isLoading = state.detailLoadingKey === state.selectedKey;
+  const detailPairs = Array.isArray(detail.pairs) ? detail.pairs : [];
+  const basicPairs = externalBasicPairs(kind, row);
+  const pairKeys = new Set(basicPairs.map(([key]) => key));
+  const mergedPairs = [...basicPairs, ...detailPairs.filter(([key]) => !pairKeys.has(key))];
+  const tags = [row.permitNumber || row.rowNumber, row.itemCategory || row.dosageForm, row.route, row.permitDate].filter(Boolean);
+
+  panel.innerHTML = `
+    <header class="detail-head">
+      <h2>${escapeHtml(row.itemName || "-")}</h2>
+      <p>${escapeHtml(row.entpName || "-")}</p>
+      <div class="tag-row">${tags.map((tag) => `<span class="tag blue">${escapeHtml(tag)}</span>`).join("")}</div>
+    </header>
+    <div class="detail-content">
+      ${isLoading ? `<p class="table-message">상세정보를 불러오는 중입니다.</p>` : ""}
+      ${detail.error ? `<p class="table-message error">상세 원문을 가져오지 못했습니다: ${escapeHtml(detail.error)}</p>` : ""}
+      ${renderKeyValue("기본정보", mergedPairs)}
+      ${detail.summary ? renderTextSection("원문 텍스트", detail.summary, true) : ""}
+      ${renderExternalTablePreview(detail.tables)}
+      ${row.hasDetailUrl === false ? `<p class="muted">이 항목은 목록 원문에서 별도 상세 주소가 확인되지 않아 목록 정보를 우선 표시합니다.</p>` : ""}
+    </div>
+  `;
+}
+
 function renderExternalDashboard(kind) {
   const dashboard = externalDashboard(kind);
   const { state } = dashboard;
   if (!dashboard.body) return;
+  renderExternalDetail(kind);
 
   dashboard.count.innerHTML = `총 <strong>${state.total.toLocaleString("ko-KR")}</strong> 건`;
   dashboard.pageInfo.textContent = `${state.page.toLocaleString("ko-KR")} / ${state.totalPages.toLocaleString("ko-KR")}`;
@@ -294,21 +386,24 @@ function renderExternalDashboard(kind) {
   }
 
   dashboard.body.innerHTML = state.rows
-    .map(
-      (row) => `
-        <tr>
+    .map((row, index) => {
+      const rowKey = externalRowKey(row, index);
+      const selected = rowKey === state.selectedKey ? "selected" : "";
+      row.__key = rowKey;
+      return `
+        <tr class="${selected}">
           ${dashboard.columns
             .map((column) => {
               const value = row[column.key] || "-";
-              if (column.key === "itemName" && row.sourceUrl) {
-                return `<td><a class="table-link" href="${escapeHtml(row.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(value)}</a></td>`;
+              if (column.key === "itemName") {
+                return `<td><button class="table-link" type="button" data-external-select="${escapeHtml(rowKey)}">${escapeHtml(value)}</button></td>`;
               }
               return `<td>${escapeHtml(value)}</td>`;
             })
             .join("")}
         </tr>
-      `
-    )
+      `;
+    })
     .join("");
 }
 
@@ -319,6 +414,8 @@ async function loadExternalResults(kind, { resetPage = false } = {}) {
   if (resetPage) state.page = 1;
   state.loading = true;
   state.error = "";
+  state.selectedKey = "";
+  state.detailLoadingKey = "";
   renderExternalDashboard(kind);
 
   try {
@@ -345,6 +442,45 @@ async function loadExternalResults(kind, { resetPage = false } = {}) {
     state.error = friendlySearchError(error);
   } finally {
     state.loading = false;
+    renderExternalDashboard(kind);
+  }
+}
+
+async function loadExternalDetail(kind, rowKey, { force = false } = {}) {
+  const dashboard = externalDashboard(kind);
+  const { state } = dashboard;
+  const row = state.rows.find((item, index) => externalRowKey(item, index) === rowKey);
+  if (!row) return;
+
+  state.selectedKey = rowKey;
+  renderExternalDashboard(kind);
+
+  if (!force && state.detailCache[rowKey]) return;
+  if (row.hasDetailUrl === false || !row.sourceUrl) {
+    state.detailCache[rowKey] = { pairs: [], tables: [], summary: "" };
+    renderExternalDashboard(kind);
+    return;
+  }
+
+  state.detailLoadingKey = rowKey;
+  renderExternalDetail(kind);
+
+  try {
+    const params = new URLSearchParams({ kind, sourceUrl: row.sourceUrl, _v: API_VERSION });
+    const response = await fetch(`${dashboard.detailEndpoint}?${params}`);
+    if (!response.ok) {
+      let message = `상세 요청 실패 (${response.status})`;
+      try {
+        const body = await response.json();
+        if (body?.message) message += `: ${body.message}`;
+      } catch {}
+      throw new Error(message);
+    }
+    state.detailCache[rowKey] = await response.json();
+  } catch (error) {
+    state.detailCache[rowKey] = { error: friendlySearchError(error), pairs: [], tables: [], summary: "" };
+  } finally {
+    if (state.detailLoadingKey === rowKey) state.detailLoadingKey = "";
     renderExternalDashboard(kind);
   }
 }
@@ -795,7 +931,11 @@ async function fetchAndCacheDetail(itemSeq) {
 async function requestDetail(itemSeq) {
   const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`);
   if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
-  return response.json();
+  const payload = await response.json();
+  if (payload.error) {
+    throw new Error(payload.detailError || payload.error);
+  }
+  return payload;
 }
 
 async function requestDetailBatch(itemSeqs) {
@@ -1208,7 +1348,61 @@ function toCsvValue(value) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-function downloadCsv() {
+async function downloadCsv() {
+  csvButton.disabled = true;
+  csvButton.textContent = "⏳";
+
+  try {
+    const query = Object.fromEntries(new FormData(form).entries());
+    Object.assign(query, state.filters);
+    // Remove empty values
+    for (const key of Object.keys(query)) {
+      if (!query[key]) delete query[key];
+    }
+
+    // Pass client-side detail cache to avoid re-fetching
+    const cache = {};
+    for (const [seq, detail] of Object.entries(state.detailCache)) {
+      if (detail && (detail.contractManufacturer || detail.performance)) {
+        cache[seq] = {
+          contractManufacturer: detail.contractManufacturer || "",
+          atcCode: detail.atcCode || "",
+          standardCode: detail.standardCode || "",
+          unitDose: detail.unitDose || "",
+          mainIngredient: detail.mainIngredient || "",
+          performance: detail.performance || null
+        };
+      }
+    }
+
+    const response = await fetch("/api/csv", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, cache })
+    });
+
+    if (!response.ok) {
+      throw new Error(`CSV 생성 실패 (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `mfds-drugs-all-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.warn("Server CSV failed, falling back to client-side:", error.message);
+    // Fallback: client-side CSV for current page only
+    downloadCsvClientSide();
+  } finally {
+    csvButton.disabled = false;
+    csvButton.textContent = "CSV";
+  }
+}
+
+function downloadCsvClientSide() {
   const perfYears = getPerformanceYears();
   const headers = [
     ["rowNumber", "순번"],
@@ -1447,7 +1641,20 @@ categoryTabs.forEach((button) => {
   });
 
   dashboard.form.addEventListener("reset", () => {
+    const prefix = kind === "vet" ? "Vet" : "Aquatic";
+    const extraWrap = document.querySelector(`#extraIngredientWrap${prefix}`);
+    const toggle = document.querySelector(`#extraIngredientToggle${prefix}`);
+    if (extraWrap && !extraWrap.classList.contains("collapsed")) {
+      extraWrap.classList.add("collapsed");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    }
     setTimeout(() => loadExternalResults(kind, { resetPage: true }), 0);
+  });
+
+  dashboard.body?.addEventListener("click", (event) => {
+    const target = event.target.closest("[data-external-select]");
+    if (!target) return;
+    loadExternalDetail(kind, target.dataset.externalSelect);
   });
 
   dashboard.prev.addEventListener("click", () => {
@@ -1608,15 +1815,19 @@ csvButton.addEventListener("click", downloadCsv);
 
 /* ── Collapsible extra ingredients toggle ── */
 
-const extraToggle = document.querySelector("#extraIngredientToggle");
-const extraWrap = document.querySelector("#extraIngredientWrap");
-
-if (extraToggle && extraWrap) {
-  extraToggle.addEventListener("click", () => {
-    const isCollapsed = extraWrap.classList.toggle("collapsed");
-    extraToggle.setAttribute("aria-expanded", String(!isCollapsed));
-  });
+function initCollapsible(toggleId, wrapId) {
+  const toggle = document.querySelector(toggleId);
+  const wrap = document.querySelector(wrapId);
+  if (toggle && wrap) {
+    toggle.addEventListener("click", () => {
+      const isCollapsed = wrap.classList.toggle("collapsed");
+      toggle.setAttribute("aria-expanded", String(!isCollapsed));
+    });
+  }
 }
+initCollapsible("#extraIngredientToggle", "#extraIngredientWrap");
+initCollapsible("#extraIngredientToggleVet", "#extraIngredientWrapVet");
+initCollapsible("#extraIngredientToggleAquatic", "#extraIngredientWrapAquatic");
 
 /* ── Draggable layout splitter ── */
 
