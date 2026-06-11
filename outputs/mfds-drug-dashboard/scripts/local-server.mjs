@@ -10,7 +10,8 @@ if (dns && dns.setDefaultResultOrder) {
 }
 
 const require = createRequire(import.meta.url);
-const { searchMfds, getMfdsDetail } = require("../lib/mfds.js");
+const { searchMfds, getMfdsDetail, getMfdsDetailsBatch } = require("../lib/mfds.js");
+const { searchVetMedicines, searchAquaticMedicines } = require("../lib/public-medicines.js");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -43,6 +44,28 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/vet-search") {
+      try {
+        sendJson(res, 200, await searchVetMedicines(Object.fromEntries(url.searchParams.entries())));
+      } catch (error) {
+        console.error("Vet Search API Failure:", error);
+        const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
+        sendJson(res, 502, { error: "vet_search_failed", message: detailMsg });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/aquatic-search") {
+      try {
+        sendJson(res, 200, await searchAquaticMedicines(Object.fromEntries(url.searchParams.entries())));
+      } catch (error) {
+        console.error("Aquatic Search API Failure:", error);
+        const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
+        sendJson(res, 502, { error: "aquatic_search_failed", message: detailMsg });
+      }
+      return;
+    }
+
     if (url.pathname === "/api/detail") {
       try {
         sendJson(res, 200, await getMfdsDetail(url.searchParams.get("itemSeq")));
@@ -50,6 +73,19 @@ const server = http.createServer(async (req, res) => {
         console.error("Detail API Failure:", error);
         const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
         sendJson(res, 502, { error: "mfds_detail_failed", message: detailMsg });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/detail-batch") {
+      try {
+        const rawSeqs = url.searchParams.get("itemSeqs") || url.searchParams.get("itemSeq") || "";
+        const itemSeqs = rawSeqs.split(",").map((seq) => seq.trim()).filter(Boolean);
+        sendJson(res, 200, await getMfdsDetailsBatch(itemSeqs, 5));
+      } catch (error) {
+        console.error("Detail Batch API Failure:", error);
+        const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
+        sendJson(res, 502, { error: "mfds_detail_batch_failed", message: detailMsg });
       }
       return;
     }

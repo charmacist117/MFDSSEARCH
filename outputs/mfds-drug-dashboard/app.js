@@ -7,6 +7,7 @@ const state = {
   selectedSeq: "",
   detailCache: {},
   detailLoadingSeq: "",
+  unitDoseLoading: false,
   listLoading: false,
   error: "",
   notice: "",
@@ -30,15 +31,23 @@ const goPage = document.querySelector("#goPage");
 const pageInput = document.querySelector("#pageInput");
 const pageInfo = document.querySelector("#pageInfo");
 const statusText = document.querySelector("#statusText");
+const categoryTabs = document.querySelectorAll("[data-category-tab]");
 const workspaceTabs = document.querySelectorAll("[data-workspace-tab]");
 const searchWorkspace = document.querySelector("#searchWorkspace");
 const compareWorkspace = document.querySelector("#compareWorkspace");
+const vetWorkspace = document.querySelector("#vetWorkspace");
+const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
+const API_VERSION = "unitdose-batch-1";
 let compareSlotSeed = 0;
 const compareState = {
   slots: []
+};
+const externalStates = {
+  vet: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false },
+  aquatic: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false }
 };
 
 function escapeHtml(value) {
@@ -71,6 +80,14 @@ function mergeKeepNonEmpty(base, overlay) {
     result[key] = value;
   }
   return result;
+}
+
+function friendlySearchError(error) {
+  const message = String(error?.message || error || "");
+  if (/fetch failed|econnreset|timeout|network|terminated/i.test(message)) {
+    return "MFDS 서버 연결이 불안정합니다. 잠시 후 다시 검색해 주세요.";
+  }
+  return message || "검색 요청에 실패했습니다.";
 }
 
 function rowWithCachedDetail(row) {
@@ -130,7 +147,7 @@ function formatPerformanceYearCell(performance, year) {
 
 function buildSearchParams() {
   const values = Object.fromEntries(new FormData(form).entries());
-  const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page) });
+  const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page), _v: API_VERSION });
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
   }
@@ -200,11 +217,136 @@ function syncCompareQueryFromForm(slot, formEl) {
 }
 
 function compactParams(values, filters, page) {
-  const params = new URLSearchParams({ ...values, ...filters, page: String(page) });
+  const params = new URLSearchParams({ ...values, ...filters, page: String(page), _v: API_VERSION });
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
   }
   return params;
+}
+
+function externalDashboard(kind) {
+  const prefix = kind === "vet" ? "vet" : "aquatic";
+  return {
+    kind,
+    state: externalStates[kind],
+    form: document.querySelector(`#${prefix}SearchForm`),
+    body: document.querySelector(`#${prefix}ResultBody`),
+    count: document.querySelector(`#${prefix}ResultCount`),
+    status: document.querySelector(`#${prefix}StatusText`),
+    pageInfo: document.querySelector(`#${prefix}PageInfo`),
+    prev: document.querySelector(`#${prefix}PrevPage`),
+    next: document.querySelector(`#${prefix}NextPage`),
+    endpoint: kind === "vet" ? "/api/vet-search" : "/api/aquatic-search",
+    defaultStatus: kind === "vet" ? "동물용의약품 아지(AZ)트 목록" : "국립수산물품질관리원 약품편람",
+    columns:
+      kind === "vet"
+        ? [
+            { key: "itemName", label: "제품명" },
+            { key: "entpName", label: "업체명" },
+            { key: "itemCategory", label: "품목구분" },
+            { key: "permitDate", label: "허가일" },
+            { key: "note", label: "비고" }
+          ]
+        : [
+            { key: "permitNumber", label: "허가번호" },
+            { key: "itemName", label: "제품명" },
+            { key: "entpName", label: "업체명" },
+            { key: "dosageForm", label: "제형" },
+            { key: "route", label: "투여경로" },
+            { key: "firstPermitDate", label: "최초허가일" },
+            { key: "permitDate", label: "최종허가일" }
+          ]
+  };
+}
+
+function buildExternalParams(dashboard) {
+  const values = Object.fromEntries(new FormData(dashboard.form).entries());
+  const params = new URLSearchParams({ ...values, page: String(dashboard.state.page), _v: API_VERSION });
+  for (const [key, value] of [...params.entries()]) {
+    if (value === "") params.delete(key);
+  }
+  return params;
+}
+
+function renderExternalDashboard(kind) {
+  const dashboard = externalDashboard(kind);
+  const { state } = dashboard;
+  if (!dashboard.body) return;
+
+  dashboard.count.innerHTML = `총 <strong>${state.total.toLocaleString("ko-KR")}</strong> 건`;
+  dashboard.pageInfo.textContent = `${state.page.toLocaleString("ko-KR")} / ${state.totalPages.toLocaleString("ko-KR")}`;
+  dashboard.prev.disabled = state.page <= 1 || state.loading;
+  dashboard.next.disabled = state.page >= state.totalPages || state.loading;
+  dashboard.status.textContent = state.loading ? "목록을 불러오는 중" : state.error || state.notice || dashboard.defaultStatus;
+
+  const colSpan = dashboard.columns.length;
+  if (state.loading) {
+    dashboard.body.innerHTML = `<tr><td colspan="${colSpan}" class="table-message">목록을 불러오는 중입니다.</td></tr>`;
+    return;
+  }
+  if (state.error) {
+    dashboard.body.innerHTML = `<tr><td colspan="${colSpan}" class="table-message error">${escapeHtml(state.error)}</td></tr>`;
+    return;
+  }
+  if (!state.rows.length) {
+    dashboard.body.innerHTML = `<tr><td colspan="${colSpan}" class="table-message">검색 결과가 없습니다.</td></tr>`;
+    return;
+  }
+
+  dashboard.body.innerHTML = state.rows
+    .map(
+      (row) => `
+        <tr>
+          ${dashboard.columns
+            .map((column) => {
+              const value = row[column.key] || "-";
+              if (column.key === "itemName" && row.sourceUrl) {
+                return `<td><a class="table-link" href="${escapeHtml(row.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(value)}</a></td>`;
+              }
+              return `<td>${escapeHtml(value)}</td>`;
+            })
+            .join("")}
+        </tr>
+      `
+    )
+    .join("");
+}
+
+async function loadExternalResults(kind, { resetPage = false } = {}) {
+  const dashboard = externalDashboard(kind);
+  const { state } = dashboard;
+  if (!dashboard.form) return;
+  if (resetPage) state.page = 1;
+  state.loading = true;
+  state.error = "";
+  renderExternalDashboard(kind);
+
+  try {
+    const response = await fetch(`${dashboard.endpoint}?${buildExternalParams(dashboard)}`);
+    if (!response.ok) {
+      let message = `검색 요청 실패 (${response.status})`;
+      try {
+        const body = await response.json();
+        if (body?.message) message += `: ${body.message}`;
+      } catch {}
+      throw new Error(message);
+    }
+    const payload = await response.json();
+    state.rows = payload.items || [];
+    state.total = Number(payload.total || state.rows.length || 0);
+    state.page = Number(payload.page || state.page);
+    state.totalPages = Math.max(Number(payload.totalPages || 1), 1);
+    state.notice = payload.notice || "";
+    state.loaded = true;
+  } catch (error) {
+    state.rows = [];
+    state.total = 0;
+    state.totalPages = 1;
+    state.error = friendlySearchError(error);
+  } finally {
+    state.loading = false;
+    renderExternalDashboard(kind);
+  }
 }
 
 function compareInput(slot, label, name, type = "text") {
@@ -257,11 +399,12 @@ function ingredientLineHtml(value) {
     .join("") || "-";
 }
 
-function unitDoseLineHtml(value) {
+function unitDoseLineHtml(value, loading = false) {
   const lines = String(value || "")
     .split(/\n+/)
     .map((item) => item.trim())
     .filter(Boolean);
+  if (!lines.length && loading) return `<span class="muted">조회 중</span>`;
   if (!lines.length) return `<span class="muted">-</span>`;
   return lines.map((item) => `<span>${escapeHtml(item)}</span>`).join("");
 }
@@ -515,7 +658,7 @@ async function loadCompareResults(slotId, { resetPage = false } = {}) {
     slot.total = 0;
     slot.selectedSeq = "";
     slot.listLoading = false;
-    slot.error = error.message;
+    slot.error = friendlySearchError(error);
   }
   renderCompareSlots();
   setTimeout(() => hydrateCompareSlotDetails(slot.id, slot.detailHydrationGeneration), 0);
@@ -525,7 +668,7 @@ async function loadCompareDetail(slotId, itemSeq, { force = false } = {}) {
   const slot = getCompareSlot(slotId);
   if (!slot || !itemSeq) return;
   const cached = slot.detailCache[itemSeq];
-  if (cached && !cached.detailError && !force) {
+  if (cached && !cached.detailError && !cached.detailPartial && !force) {
     renderCompareSlots();
     return;
   }
@@ -548,42 +691,11 @@ async function loadCompareDetail(slotId, itemSeq, { force = false } = {}) {
   }
 }
 
-async function hydrateCompareSlotDetails(slotId, generation) {
-  const slot = getCompareSlot(slotId);
-  if (!slot || generation !== slot.detailHydrationGeneration) return;
-  const seqs = slot.rows
-    .map((row) => row.itemSeq)
-    .filter((seq) => seq && !slot.detailCache[seq]?.unitDose);
-  if (!seqs.length) return;
-
-  const concurrency = 2;
-  let index = 0;
-
-  async function worker() {
-    while (index < seqs.length) {
-      const currentSlot = getCompareSlot(slotId);
-      if (!currentSlot || generation !== currentSlot.detailHydrationGeneration) return;
-      const itemSeq = seqs[index];
-      index += 1;
-      try {
-        const payload = await requestDetail(itemSeq);
-        const latestSlot = getCompareSlot(slotId);
-        if (!latestSlot || generation !== latestSlot.detailHydrationGeneration) return;
-        const row = latestSlot.rows.find((item) => item.itemSeq === itemSeq);
-        latestSlot.detailCache[itemSeq] = mergeKeepNonEmpty(row, payload);
-        syncVisibleCompareForms();
-        renderCompareSlots();
-      } catch {}
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, seqs.length) }, worker));
-}
-
 async function loadResults({ resetPage = false } = {}) {
   if (resetPage) state.page = 1;
   state.listLoading = true;
   state.error = "";
+  state.unitDoseLoading = false;
   preloadGeneration += 1;
   render();
 
@@ -609,6 +721,7 @@ async function loadResults({ resetPage = false } = {}) {
     state.totalPages = Math.max(Number(payload.totalPages || 1), 1);
     state.selectedSeq = state.rows[0]?.itemSeq || "";
     state.listLoading = false;
+    state.unitDoseLoading = false;
     render();
     setTimeout(() => hydrateCurrentPageDetails(preloadGeneration), 0);
   } catch (error) {
@@ -616,7 +729,8 @@ async function loadResults({ resetPage = false } = {}) {
     state.total = 0;
     state.selectedSeq = "";
     state.listLoading = false;
-    state.error = error.message;
+    state.unitDoseLoading = false;
+    state.error = friendlySearchError(error);
     state.notice = "";
     render();
   }
@@ -667,7 +781,7 @@ async function preloadAllDetails() {
 }
 
 async function fetchAndCacheDetail(itemSeq) {
-  if (state.detailCache[itemSeq]) return;
+  if (state.detailCache[itemSeq] && !state.detailCache[itemSeq].detailPartial) return;
   try {
     const payload = await requestDetail(itemSeq);
     const row = state.rows.find((r) => r.itemSeq === itemSeq);
@@ -684,36 +798,105 @@ async function requestDetail(itemSeq) {
   return response.json();
 }
 
+async function requestDetailBatch(itemSeqs) {
+  const seqs = Array.from(new Set(itemSeqs.filter(Boolean)));
+  if (!seqs.length) return [];
+  const response = await fetch(`/api/detail-batch?itemSeqs=${encodeURIComponent(seqs.join(","))}&_v=${encodeURIComponent(API_VERSION)}`);
+  if (!response.ok) throw new Error(`상세 배치 요청 실패 (${response.status})`);
+  const payload = await response.json();
+  return payload.items || [];
+}
+
 async function hydrateCurrentPageDetails(generation = preloadGeneration) {
   const seqs = state.rows
     .map((row) => row.itemSeq)
     .filter((seq) => seq && !state.detailCache[seq]?.unitDose);
   if (!seqs.length) return;
 
-  const concurrency = 2;
-  let index = 0;
+  state.unitDoseLoading = true;
+  render();
 
-  async function worker() {
-    while (index < seqs.length) {
+  try {
+    const items = await requestDetailBatch(seqs);
+    if (generation !== preloadGeneration) return;
+    items.forEach((payload) => {
+      const row = state.rows.find((item) => item.itemSeq === payload.itemSeq);
+      if (!row) return;
+      state.detailCache[payload.itemSeq] = mergeKeepNonEmpty(row, payload);
+    });
+    state.unitDoseLoading = false;
+    render();
+  } catch {
+    const firstSeq = seqs[0];
+    if (!firstSeq || generation !== preloadGeneration) {
+      state.unitDoseLoading = false;
+      render();
+      return;
+    }
+    try {
+      const payload = await requestDetail(firstSeq);
       if (generation !== preloadGeneration) return;
-      const itemSeq = seqs[index];
-      index += 1;
-      try {
-        const payload = await requestDetail(itemSeq);
-        if (generation !== preloadGeneration) return;
-        const row = state.rows.find((item) => item.itemSeq === itemSeq);
-        state.detailCache[itemSeq] = mergeKeepNonEmpty(row, payload);
-        render();
-      } catch {}
+      const row = state.rows.find((item) => item.itemSeq === firstSeq);
+      state.detailCache[firstSeq] = mergeKeepNonEmpty(row, payload);
+      state.unitDoseLoading = false;
+      render();
+    } catch {
+      state.unitDoseLoading = false;
+      render();
     }
   }
+}
 
-  await Promise.all(Array.from({ length: Math.min(concurrency, seqs.length) }, worker));
+async function hydrateRowsWithBatch(rows, cache, generation, isActive, renderFn) {
+  const seqs = rows
+    .map((row) => row.itemSeq)
+    .filter((seq) => seq && !cache[seq]?.unitDose);
+  if (!seqs.length) return;
+
+  try {
+    const items = await requestDetailBatch(seqs);
+    if (!isActive(generation)) return;
+    items.forEach((payload) => {
+      const row = rows.find((item) => item.itemSeq === payload.itemSeq);
+      if (!row) return;
+      cache[payload.itemSeq] = mergeKeepNonEmpty(row, payload);
+    });
+    renderFn();
+  } catch {
+    if (!isActive(generation)) return;
+    const firstSeq = seqs[0];
+    if (!firstSeq) return;
+    try {
+      const payload = await requestDetail(firstSeq);
+      if (!isActive(generation)) return;
+      const row = rows.find((item) => item.itemSeq === firstSeq);
+      cache[firstSeq] = mergeKeepNonEmpty(row, payload);
+      renderFn();
+    } catch {}
+  }
+}
+
+async function hydrateCompareSlotDetails(slotId, generation) {
+  const slot = getCompareSlot(slotId);
+  if (!slot || generation !== slot.detailHydrationGeneration) return;
+  await hydrateRowsWithBatch(
+    slot.rows,
+    slot.detailCache,
+    generation,
+    (activeGeneration) => {
+      const latestSlot = getCompareSlot(slotId);
+      return Boolean(latestSlot && latestSlot.detailHydrationGeneration === activeGeneration);
+    },
+    () => {
+      syncVisibleCompareForms();
+      renderCompareSlots();
+    }
+  );
 }
 
 async function loadDetail(itemSeq, { force = false } = {}) {
   const cached = state.detailCache[itemSeq];
-  if (!itemSeq || (cached && !cached.detailError && !force)) {
+  if (!itemSeq || (cached && !cached.detailError && !cached.detailPartial && !force)) {
     render();
     return;
   }
@@ -775,7 +958,16 @@ function renderResults() {
   }
 
   if (state.error) {
-    resultBody.innerHTML = `<tr><td colspan="${totalCols}" class="table-message error">${escapeHtml(state.error)}</td></tr>`;
+    resultBody.innerHTML = `
+      <tr>
+        <td colspan="${totalCols}" class="table-message error">
+          <div class="search-error-inline">
+            <span>${escapeHtml(state.error)}</span>
+            <button type="button" data-retry-search>다시 검색</button>
+          </div>
+        </td>
+      </tr>
+    `;
     return;
   }
 
@@ -812,7 +1004,7 @@ function renderResults() {
           </td>
           <td>${escapeHtml(drug.entpName || "-")}</td>
           <td><div class="ingredient-lines">${ingredientLines || "-"}</div></td>
-          <td><div class="unit-dose-lines">${unitDoseLineHtml(drug.unitDose)}</div></td>
+          <td><div class="unit-dose-lines">${unitDoseLineHtml(drug.unitDose, state.unitDoseLoading && !drug.unitDose)}</div></td>
           <td>${escapeHtml(drug.etcOtc || "-")}</td>
           <td>${escapeHtml(drug.permitDate || "-")}</td>
           <td>${escapeHtml(drug.atcCode || "-")}</td>
@@ -1135,6 +1327,12 @@ form.querySelectorAll(".quick-dates button").forEach((button) => {
 });
 
 resultBody.addEventListener("click", (event) => {
+  const retrySearch = event.target.closest("[data-retry-search]");
+  if (retrySearch) {
+    loadResults();
+    return;
+  }
+
   const target = event.target.closest("[data-select], tr[data-seq]");
   if (!target) return;
   const itemSeq = target.dataset.select || target.dataset.seq;
@@ -1163,6 +1361,39 @@ function setWorkspaceTab(tabName) {
   if (tabName === "compare") {
     ensureCompareSlot();
     renderCompareSlots();
+  }
+}
+
+function currentHumanTab() {
+  return document.querySelector("[data-workspace-tab].active")?.dataset.workspaceTab || "search";
+}
+
+function setCategoryTab(categoryName) {
+  categoryTabs.forEach((button) => {
+    const active = button.dataset.categoryTab === categoryName;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+
+  const isHuman = categoryName === "human";
+  document.querySelector(".workspace-tabs")?.toggleAttribute("hidden", !isHuman);
+  if (vetWorkspace) vetWorkspace.hidden = categoryName !== "vet";
+  if (aquaticWorkspace) aquaticWorkspace.hidden = categoryName !== "aquatic";
+
+  if (isHuman) {
+    setWorkspaceTab(currentHumanTab());
+    return;
+  }
+
+  if (searchWorkspace) searchWorkspace.hidden = true;
+  if (compareWorkspace) compareWorkspace.hidden = true;
+  document.body.classList.remove("compare-mode");
+
+  if (categoryName === "vet" && !externalStates.vet.loaded) {
+    loadExternalResults("vet");
+  }
+  if (categoryName === "aquatic" && !externalStates.aquatic.loaded) {
+    loadExternalResults("aquatic");
   }
 }
 
@@ -1197,6 +1428,38 @@ function applyRangeToForm(formEl, range) {
 workspaceTabs.forEach((button) => {
   button.addEventListener("click", () => {
     setWorkspaceTab(button.dataset.workspaceTab);
+  });
+});
+
+categoryTabs.forEach((button) => {
+  button.addEventListener("click", () => {
+    setCategoryTab(button.dataset.categoryTab);
+  });
+});
+
+["vet", "aquatic"].forEach((kind) => {
+  const dashboard = externalDashboard(kind);
+  if (!dashboard.form) return;
+
+  dashboard.form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    loadExternalResults(kind, { resetPage: true });
+  });
+
+  dashboard.form.addEventListener("reset", () => {
+    setTimeout(() => loadExternalResults(kind, { resetPage: true }), 0);
+  });
+
+  dashboard.prev.addEventListener("click", () => {
+    if (dashboard.state.page <= 1) return;
+    dashboard.state.page -= 1;
+    loadExternalResults(kind);
+  });
+
+  dashboard.next.addEventListener("click", () => {
+    if (dashboard.state.page >= dashboard.state.totalPages) return;
+    dashboard.state.page += 1;
+    loadExternalResults(kind);
   });
 });
 

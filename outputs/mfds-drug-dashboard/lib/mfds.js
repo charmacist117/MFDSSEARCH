@@ -1,14 +1,25 @@
 const dns = require("node:dns");
+const https = require("node:https");
 if (dns && dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder("ipv4first");
 }
 
 const BASE_URL = "https://nedrug.mfds.go.kr";
+const MFDS_FETCH_HEADERS = {
+  "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+  "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+};
+const MFDS_HTTPS_HEADERS = {
+  ...MFDS_FETCH_HEADERS,
+  "accept-encoding": "identity",
+  "connection": "close"
+};
 const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const DETAIL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const SEARCH_CACHE_LIMIT = 80;
 const DETAIL_CACHE_LIMIT = 500;
-const CONTRACT_SEARCH_NOTICE = "위탁제조업체는 MFDS 기본 목록 검색 조건에 없어 업체명 후보 검색 후 상세정보로 보강합니다.";
+const CONTRACT_SEARCH_NOTICE = "위탁제조업체는 허가자 업체명과 분리해 상세정보의 위탁제조업체 값으로만 필터링합니다.";
 const searchMemoryCache = new Map();
 const detailMemoryCache = new Map();
 
@@ -132,6 +143,56 @@ function isRetriableFetchError(error) {
   ].some((keyword) => message.includes(keyword));
 }
 
+function httpsTextRequest(url, timeoutMs = 15000, redirectCount = 0) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const req = https.request(
+      {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port || 443,
+        path: `${target.pathname}${target.search}`,
+        method: "GET",
+        headers: MFDS_HTTPS_HEADERS,
+        timeout: timeoutMs,
+        lookup(hostname, options, callback) {
+          dns.lookup(hostname, { ...options, family: 4 }, callback);
+        }
+      },
+      (res) => {
+        const location = res.headers.location;
+        if (res.statusCode >= 300 && res.statusCode < 400 && location && redirectCount < 4) {
+          res.resume();
+          const redirected = new URL(location, target).toString();
+          httpsTextRequest(redirected, timeoutMs, redirectCount + 1).then(resolve, reject);
+          return;
+        }
+
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          text += chunk;
+        });
+        res.on("end", () => {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            const error = new Error(`${res.statusCode} ${res.statusMessage || "HTTP error"}`);
+            error.status = res.statusCode;
+            reject(error);
+            return;
+          }
+          resolve({ url: target.toString(), text });
+        });
+      }
+    );
+
+    req.on("timeout", () => {
+      req.destroy(new Error("MFDS request timeout"));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 async function fetchMfdsText(url, retries = 2, timeoutMs = 15000) {
   let lastError;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
@@ -139,11 +200,7 @@ async function fetchMfdsText(url, retries = 2, timeoutMs = 15000) {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(url, {
-        headers: {
-          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-          "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-          "accept-language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
-        },
+        headers: MFDS_FETCH_HEADERS,
         redirect: "follow",
         signal: controller.signal
       });
@@ -155,6 +212,13 @@ async function fetchMfdsText(url, retries = 2, timeoutMs = 15000) {
       return { url: response.url, text: await response.text() };
     } catch (error) {
       lastError = error;
+      if (isRetriableFetchError(error)) {
+        try {
+          return await httpsTextRequest(url, timeoutMs);
+        } catch (fallbackError) {
+          lastError = fallbackError;
+        }
+      }
       if (attempt < retries && isRetriableFetchError(error)) {
         await delay(450 * attempt);
       } else {
@@ -280,9 +344,8 @@ function mergeListDetail(item, detail) {
   };
 }
 
-function contractSearchMatches(item, contractManufacturer, includeCompanyFallback) {
-  if (includesText(item.contractManufacturer, contractManufacturer)) return true;
-  return includeCompanyFallback && includesText(item.entpName, contractManufacturer);
+function contractSearchMatches(item, contractManufacturer) {
+  return includesText(item.contractManufacturer, contractManufacturer);
 }
 
 function filterExtraIngredients(items, ingredient4, ingredient5) {
@@ -615,14 +678,11 @@ async function fetchSearchPage(query, page) {
   return { url, parsed: parseSearchHtml(text) };
 }
 
-async function enrichContractCandidates(items, contractManufacturer, includeCompanyFallback) {
+async function enrichContractCandidates(items, contractManufacturer) {
   const detailed = await mapConcurrent(items, 3, async (item) => {
     const cachedDetail = getCached(detailMemoryCache, String(item.itemSeq), DETAIL_CACHE_TTL_MS);
     if (cachedDetail) {
       return mergeListDetail(item, cachedDetail);
-    }
-    if (includeCompanyFallback && includesText(item.entpName, contractManufacturer)) {
-      return item;
     }
     try {
       const detail = await getMfdsDetail(item.itemSeq);
@@ -631,7 +691,7 @@ async function enrichContractCandidates(items, contractManufacturer, includeComp
       return item;
     }
   });
-  return detailed.filter((item) => contractSearchMatches(item, contractManufacturer, includeCompanyFallback));
+  return detailed.filter((item) => contractSearchMatches(item, contractManufacturer));
 }
 
 async function searchMfdsByContractManufacturer(query, page, cacheKey) {
@@ -639,28 +699,12 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
   const ingredient4 = valueOf(query.ingredient4);
   const ingredient5 = valueOf(query.ingredient5);
   const nativeQuery = stripDerivedSearchFields(query);
-  const candidateQuery = {
-    ...nativeQuery,
-    companyName: valueOf(nativeQuery.companyName) || contractManufacturer
-  };
 
-  let { url, parsed } = await fetchSearchPage(candidateQuery, page);
-  let items = await enrichContractCandidates(parsed.items, contractManufacturer, true);
-  let total = parsed.total;
+  let { url, parsed } = await fetchSearchPage(nativeQuery, page);
+  let items = await enrichContractCandidates(parsed.items, contractManufacturer);
+  let total = items.length;
   let sourceUrl = url;
-  let notice = CONTRACT_SEARCH_NOTICE;
-
-  if (!items.length && page === 1) {
-    const fallback = await fetchSearchPage(nativeQuery, 1);
-    const fallbackItems = await enrichContractCandidates(fallback.parsed.items, contractManufacturer, false);
-    if (fallbackItems.length) {
-      parsed = fallback.parsed;
-      items = fallbackItems;
-      total = fallbackItems.length;
-      sourceUrl = fallback.url;
-      notice = `${CONTRACT_SEARCH_NOTICE} 현재 목록 첫 페이지에서도 위탁제조업체 직접 일치 항목을 확인했습니다.`;
-    }
-  }
+  let notice = `${CONTRACT_SEARCH_NOTICE} MFDS 목록 검색 조건에 없는 필드라 현재 조회된 목록의 상세정보 기준으로 확인합니다.`;
 
   const filteredItems = filterExtraIngredients(items, ingredient4, ingredient5);
   if (filteredItems.length !== items.length) {
@@ -729,6 +773,41 @@ async function getMfdsDetail(itemSeq) {
   return setCached(detailMemoryCache, cacheKey, parseDetailHtml(text, url), DETAIL_CACHE_LIMIT);
 }
 
+async function getMfdsDetailsBatch(itemSeqs = [], concurrency = 5) {
+  const uniqueSeqs = Array.from(new Set(itemSeqs.map((seq) => String(seq || "").trim()).filter(Boolean))).slice(0, 30);
+  const rows = await mapConcurrent(uniqueSeqs, concurrency, async (itemSeq) => {
+    try {
+      const detail = await getMfdsDetail(itemSeq);
+      return {
+        itemSeq,
+        ok: true,
+        detailPartial: true,
+        itemName: detail.itemName || "",
+        entpName: detail.entpName || "",
+        contractManufacturer: detail.contractManufacturer || "",
+        mainIngredient: detail.mainIngredient || "",
+        unitDose: detail.unitDose || "",
+        etcOtc: detail.etcOtc || "",
+        permitDate: detail.permitDate || "",
+        atcCode: detail.atcCode || "",
+        performance: detail.performance || null
+      };
+    } catch (error) {
+      return {
+        itemSeq,
+        ok: false,
+        detailPartial: true,
+        detailError: error.message || "상세 요청 실패"
+      };
+    }
+  });
+
+  return {
+    items: rows,
+    fetchedAt: new Date().toISOString()
+  };
+}
+
 module.exports = {
   BASE_URL,
   buildSearchCriteria,
@@ -737,5 +816,6 @@ module.exports = {
   parseSearchHtml,
   parseDetailHtml,
   searchMfds,
-  getMfdsDetail
+  getMfdsDetail,
+  getMfdsDetailsBatch
 };
