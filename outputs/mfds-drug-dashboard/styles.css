@@ -653,6 +653,10 @@ button:focus-visible {
   background: rgba(11, 23, 32, 0.42);
 }
 
+.changes-modal[hidden] {
+  display: none !important;
+}
+
 .changes-dialog {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

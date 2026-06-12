@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "changes-global-20260612-1";
+const API_VERSION = "changes-modal-fix-20260612-1";
 let compareSlotSeed = 0;
 const compareState = {
   slots: []
@@ -735,6 +735,7 @@ function setHomeCategory(categoryName) {
 }
 
 function showHome() {
+  closeChanges();
   categoryTabs.forEach((button) => {
     button.classList.remove("active");
     button.setAttribute("aria-selected", "false");
@@ -1903,6 +1904,7 @@ function currentHumanTab() {
 }
 
 function setCategoryTab(categoryName) {
+  closeChanges();
   if (homeWorkspace) homeWorkspace.hidden = true;
   homeButton?.classList.remove("active");
   categoryTabs.forEach((button) => {
