@@ -12,6 +12,8 @@ if (dns && dns.setDefaultResultOrder) {
 const require = createRequire(import.meta.url);
 const { searchMfds, getMfdsDetail, getMfdsDetailsBatch } = require("../lib/mfds.js");
 const { searchVetMedicines, searchAquaticMedicines, getPublicMedicineDetail } = require("../lib/public-medicines.js");
+const { globalSearch } = require("../lib/global-search.js");
+const { changesForCategory, changesCsv, CATEGORY_LABELS } = require("../lib/change-log.js");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -66,6 +68,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (url.pathname === "/api/global-search") {
+      try {
+        sendJson(res, 200, await globalSearch(Object.fromEntries(url.searchParams.entries())));
+      } catch (error) {
+        console.error("Global Search API Failure:", error);
+        const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
+        sendJson(res, 502, { error: "global_search_failed", message: detailMsg });
+      }
+      return;
+    }
+
     if (url.pathname === "/api/public-detail") {
       try {
         sendJson(res, 200, await getPublicMedicineDetail(Object.fromEntries(url.searchParams.entries())));
@@ -98,6 +111,21 @@ const server = http.createServer(async (req, res) => {
         const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
         sendJson(res, 502, { error: "mfds_detail_batch_failed", message: detailMsg });
       }
+      return;
+    }
+
+    if (url.pathname === "/api/changes") {
+      sendJson(res, 200, changesForCategory(url.searchParams.get("category") || "human"));
+      return;
+    }
+
+    if (url.pathname === "/api/changes-csv") {
+      const category = CATEGORY_LABELS[url.searchParams.get("category")] ? url.searchParams.get("category") : "human";
+      res.writeHead(200, {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename=medicine-changes-${category}.csv`
+      });
+      res.end(changesCsv(category));
       return;
     }
 

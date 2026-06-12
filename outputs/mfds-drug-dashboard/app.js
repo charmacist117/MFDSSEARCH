@@ -25,6 +25,13 @@ const resultBody = document.querySelector("#resultBody");
 const resultCount = document.querySelector("#resultCount");
 const detailPanel = document.querySelector("#detailPanel");
 const csvButton = document.querySelector("#csvButton");
+const changesButtons = document.querySelectorAll("[data-changes-category]");
+const changesModal = document.querySelector("#changesModal");
+const changesTitle = document.querySelector("#changesTitle");
+const changesMeta = document.querySelector("#changesMeta");
+const changesContent = document.querySelector("#changesContent");
+const changesCsvLink = document.querySelector("#changesCsvLink");
+const changesCloseButton = document.querySelector("#changesCloseButton");
 const prevPage = document.querySelector("#prevPage");
 const nextPage = document.querySelector("#nextPage");
 const goPage = document.querySelector("#goPage");
@@ -37,6 +44,7 @@ const homeWorkspace = document.querySelector("#homeWorkspace");
 const homeButton = document.querySelector("#homeButton");
 const homeSearchForm = document.querySelector("#homeSearchForm");
 const homeSearchInput = document.querySelector("#homeSearchInput");
+const homeSearchResults = document.querySelector("#homeSearchResults");
 const homeCategoryButtons = document.querySelectorAll("[data-home-category]");
 const searchWorkspace = document.querySelector("#searchWorkspace");
 const compareWorkspace = document.querySelector("#compareWorkspace");
@@ -45,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "external-home-20260612-1";
+const API_VERSION = "changes-global-20260612-1";
 let compareSlotSeed = 0;
 const compareState = {
   slots: []
@@ -55,6 +63,14 @@ const externalStates = {
   aquatic: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {}, columnWidths: {} }
 };
 let homeCategory = "human";
+let activeSearchKeyword = "";
+const homeSearchState = {
+  keyword: "",
+  loading: false,
+  error: "",
+  groups: [],
+  expanded: {}
+};
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -63,6 +79,20 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightText(value, keyword = activeSearchKeyword) {
+  const text = String(value ?? "");
+  const needle = String(keyword || "").trim();
+  if (!needle) return escapeHtml(text);
+  const parts = text.split(new RegExp(`(${escapeRegExp(needle)})`, "gi"));
+  return parts
+    .map((part) => (part.toLowerCase() === needle.toLowerCase() ? `<mark class="keyword-hit">${escapeHtml(part)}</mark>` : escapeHtml(part)))
+    .join("");
 }
 
 function snippet(value, limit = 82) {
@@ -720,21 +750,223 @@ function showHome() {
   setHomeCategory(homeCategory);
 }
 
-function runHomeSearch() {
-  const query = homeSearchInput?.value.trim() || "";
-  if (homeCategory === "human") {
-    setCategoryTab("human");
-    setWorkspaceTab("search");
-    if (form?.elements?.productName) form.elements.productName.value = query;
-    loadResults({ resetPage: true });
+function homeResultId(category, index) {
+  return `${category}:${index}`;
+}
+
+function findHomeResult(category, index) {
+  const group = homeSearchState.groups.find((item) => item.key === category);
+  return group?.items?.[Number(index)] || null;
+}
+
+function renderHomeResults() {
+  if (!homeSearchResults) return;
+  if (homeSearchState.loading) {
+    homeSearchResults.innerHTML = `<div class="home-result-message">세 카테고리에서 검색하는 중입니다.</div>`;
+    return;
+  }
+  if (homeSearchState.error) {
+    homeSearchResults.innerHTML = `<div class="home-result-message error">${escapeHtml(homeSearchState.error)}</div>`;
+    return;
+  }
+  if (!homeSearchState.keyword) {
+    homeSearchResults.innerHTML = "";
     return;
   }
 
-  const kind = homeCategory === "aquatic" ? "aquatic" : "vet";
-  setCategoryTab(kind);
-  const dashboard = externalDashboard(kind);
-  if (dashboard.form?.elements?.productName) dashboard.form.elements.productName.value = query;
-  loadExternalResults(kind, { resetPage: true });
+  const groupsHtml = homeSearchState.groups
+    .map((group) => {
+      const items = group.items || [];
+      const expanded = Boolean(homeSearchState.expanded[group.key]);
+      const visible = expanded ? items : items.slice(0, 3);
+      const moreCount = Math.max(0, items.length - 3);
+      return `
+        <section class="home-result-group">
+          <header>
+            <h2>${escapeHtml(group.label)}</h2>
+            <span>${items.length.toLocaleString("ko-KR")}건</span>
+          </header>
+          ${
+            group.error
+              ? `<p class="home-result-message error">${escapeHtml(group.error)}</p>`
+              : visible.length
+                ? `<div class="home-result-list">
+                    ${visible
+                      .map(
+                        (item, index) => `
+                          <button type="button" class="home-result-item" data-home-result="${escapeHtml(group.key)}" data-home-index="${index}">
+                            <strong>${highlightText(item.title, homeSearchState.keyword)}</strong>
+                            <span>${escapeHtml(item.company || "-")}</span>
+                            <small>${escapeHtml(item.matchLabel || "검색 결과")} · ${highlightText(item.snippet || item.meta || "", homeSearchState.keyword)}</small>
+                          </button>
+                        `
+                      )
+                      .join("")}
+                  </div>`
+                : `<p class="home-result-message">검색 결과가 없습니다.</p>`
+          }
+          ${
+            moreCount > 0
+              ? `<button class="home-more-button" type="button" data-home-more="${escapeHtml(group.key)}">${expanded ? "접기" : `+ 더보기 ${moreCount}건`}</button>`
+              : ""
+          }
+        </section>
+      `;
+    })
+    .join("");
+
+  homeSearchResults.innerHTML = groupsHtml;
+}
+
+function setFormProductName(formEl, value) {
+  if (formEl?.elements?.productName) formEl.elements.productName.value = value || "";
+}
+
+function openHomeHumanResult(result) {
+  const group = homeSearchState.groups.find((item) => item.key === "human");
+  const rows = (group?.items || []).map((item, index) => ({ ...item.row, rowNumber: String(index + 1) }));
+  setCategoryTab("human");
+  setWorkspaceTab("search");
+  setFormProductName(form, homeSearchState.keyword);
+  state.rows = rows;
+  state.total = rows.length;
+  state.page = 1;
+  state.pageSize = rows.length || 10;
+  state.totalPages = 1;
+  state.error = "";
+  state.notice = "홈 통합 검색 결과";
+  state.selectedSeq = result.row.itemSeq;
+  if (result.detail) {
+    state.detailCache[result.row.itemSeq] = mergeKeepNonEmpty(result.row, result.detail);
+  }
+  render();
+  loadDetail(result.row.itemSeq);
+}
+
+function openHomeExternalResult(category, result) {
+  const group = homeSearchState.groups.find((item) => item.key === category);
+  const rows = (group?.items || []).map((item, index) => ({ ...item.row, rowNumber: item.row.rowNumber || String(index + 1) }));
+  setCategoryTab(category);
+  const dashboard = externalDashboard(category);
+  setFormProductName(dashboard.form, homeSearchState.keyword);
+  const extState = dashboard.state;
+  extState.rows = rows;
+  extState.total = rows.length;
+  extState.page = 1;
+  extState.totalPages = 1;
+  extState.loading = false;
+  extState.error = "";
+  extState.notice = "홈 통합 검색 결과";
+  extState.loaded = true;
+  const rowIndex = rows.findIndex(
+    (row) =>
+      row.detailKey === result.row.detailKey ||
+      row.sourceUrl === result.row.sourceUrl ||
+      (row.itemName === result.row.itemName && row.entpName === result.row.entpName)
+  );
+  const selectedIndex = Math.max(rowIndex, 0);
+  const selectedKey = externalRowKey(rows[selectedIndex], selectedIndex);
+  extState.selectedKey = selectedKey;
+  renderExternalDashboard(category);
+  loadExternalDetail(category, selectedKey);
+}
+
+function openHomeResult(category, index) {
+  const result = findHomeResult(category, index);
+  if (!result) return;
+  activeSearchKeyword = homeSearchState.keyword;
+  if (category === "human") {
+    openHomeHumanResult(result);
+    return;
+  }
+  openHomeExternalResult(category, result);
+}
+
+function renderChangeItems(title, items) {
+  if (!items?.length) {
+    return `
+      <section class="changes-section">
+        <h3>${escapeHtml(title)}</h3>
+        <p class="empty-note">누적된 내역이 없습니다.</p>
+      </section>
+    `;
+  }
+  return `
+    <section class="changes-section">
+      <h3>${escapeHtml(title)} <span>${items.length.toLocaleString("ko-KR")}건</span></h3>
+      <div class="changes-list">
+        ${items
+          .map(
+            (item) => `
+              <article class="change-item">
+                <strong>${escapeHtml(item.name || "-")}</strong>
+                <span>${escapeHtml(item.company || "-")}</span>
+                <small>${escapeHtml(item.date || "-")} · ${escapeHtml(item.id || "-")} ${item.status ? `· ${escapeHtml(item.status)}` : ""}</small>
+                ${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+async function openChanges(category) {
+  if (!changesModal || !changesContent) return;
+  changesModal.hidden = false;
+  changesTitle.textContent = "의약품 변동사항";
+  changesMeta.textContent = "일자별 신규 등록 및 취하·만료 누적 내역";
+  changesContent.innerHTML = `<p class="changes-loading">변동사항을 불러오는 중입니다.</p>`;
+  if (changesCsvLink) {
+    changesCsvLink.href = `/api/changes-csv?category=${encodeURIComponent(category)}`;
+  }
+
+  try {
+    const response = await fetch(`/api/changes?category=${encodeURIComponent(category)}&_v=${encodeURIComponent(API_VERSION)}`);
+    if (!response.ok) throw new Error(`변동사항 요청 실패 (${response.status})`);
+    const payload = await response.json();
+    changesTitle.textContent = `${payload.label || "의약품"} 변동사항`;
+    changesMeta.textContent = payload.updatedAt ? `마지막 갱신: ${payload.updatedAt}` : "아직 갱신된 스냅샷이 없습니다.";
+    changesContent.innerHTML = `
+      ${renderChangeItems("신규 등록된 의약품", payload.added || [])}
+      ${renderChangeItems("취하·만료된 의약품", payload.removed || [])}
+    `;
+  } catch (error) {
+    changesContent.innerHTML = `<p class="changes-loading error">${escapeHtml(error.message || "변동사항을 불러오지 못했습니다.")}</p>`;
+  }
+}
+
+function closeChanges() {
+  if (changesModal) changesModal.hidden = true;
+}
+
+async function runHomeSearch() {
+  const query = homeSearchInput?.value.trim() || "";
+  activeSearchKeyword = query;
+  homeSearchState.keyword = query;
+  homeSearchState.loading = Boolean(query);
+  homeSearchState.error = "";
+  homeSearchState.groups = [];
+  homeSearchState.expanded = {};
+  renderHomeResults();
+  if (!query) return;
+
+  try {
+    const params = new URLSearchParams({ q: query, _v: API_VERSION });
+    const response = await fetch(`/api/global-search?${params}`);
+    if (!response.ok) {
+      throw new Error(`통합 검색 요청 실패 (${response.status})`);
+    }
+    const payload = await response.json();
+    homeSearchState.groups = payload.groups || [];
+    homeSearchState.keyword = payload.keyword || query;
+  } catch (error) {
+    homeSearchState.error = friendlySearchError(error);
+  } finally {
+    homeSearchState.loading = false;
+    renderHomeResults();
+  }
 }
 
 function renderCompareRows(slot) {
@@ -1277,7 +1509,7 @@ function renderKeyValue(title, pairs) {
             ([key, value]) => `
               <div>
                 <dt>${escapeHtml(key)}</dt>
-                <dd>${escapeHtml(value)}</dd>
+                <dd>${highlightText(value)}</dd>
               </div>
             `
           )
@@ -1301,7 +1533,7 @@ function renderTable(title, rows, columns) {
             .map(
               (row) => `
                 <tr>
-                  ${columns.map((column) => `<td>${escapeHtml(row[column.key] || "")}</td>`).join("")}
+                  ${columns.map((column) => `<td>${highlightText(row[column.key] || "")}</td>`).join("")}
                 </tr>
               `
             )
@@ -1317,7 +1549,7 @@ function renderTextSection(title, text, compact = false) {
   return `
     <section>
       <h3 class="section-title">${escapeHtml(title)}</h3>
-      <div class="text-block ${compact ? "compact" : ""}">${escapeHtml(text)}</div>
+      <div class="text-block ${compact ? "compact" : ""}">${highlightText(text)}</div>
     </section>
   `;
 }
@@ -1747,6 +1979,20 @@ homeSearchForm?.addEventListener("submit", (event) => {
   runHomeSearch();
 });
 
+homeSearchResults?.addEventListener("click", (event) => {
+  const moreButton = event.target.closest("[data-home-more]");
+  if (moreButton) {
+    const key = moreButton.dataset.homeMore;
+    homeSearchState.expanded[key] = !homeSearchState.expanded[key];
+    renderHomeResults();
+    return;
+  }
+
+  const resultButton = event.target.closest("[data-home-result]");
+  if (!resultButton) return;
+  openHomeResult(resultButton.dataset.homeResult, resultButton.dataset.homeIndex);
+});
+
 homeSearchInput?.addEventListener("focus", () => {
   if (!homeSearchInput.dataset.placeholder) {
     homeSearchInput.dataset.placeholder = homeSearchInput.placeholder || "어떤게 궁금하세요?";
@@ -1761,6 +2007,18 @@ homeSearchInput?.addEventListener("blur", () => {
 });
 
 homeButton?.addEventListener("click", showHome);
+
+changesButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    openChanges(button.dataset.changesCategory || "human");
+  });
+});
+
+changesCloseButton?.addEventListener("click", closeChanges);
+
+changesModal?.addEventListener("click", (event) => {
+  if (event.target === changesModal) closeChanges();
+});
 
 categoryTabs.forEach((button) => {
   button.addEventListener("click", () => {
