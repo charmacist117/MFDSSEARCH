@@ -4,13 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>의약품 상세정보 대시보드</title>
-    <link rel="stylesheet" href="./styles.css?v=8">
+    <link rel="stylesheet" href="./styles.css?v=9">
   </head>
   <body>
     <nav class="category-tabs" aria-label="의약품 분류 선택">
-      <button class="category-tab" type="button" data-category-tab="human">인체용 의약품</button>
-      <button class="category-tab" type="button" data-category-tab="vet">동물용 의약품</button>
-      <button class="category-tab" type="button" data-category-tab="aquatic">수산동물용 의약품</button>
       <button id="homeButton" class="home-button active" type="button" aria-label="홈 화면으로 이동" title="홈 화면">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3.5 11.4 12 4l8.5 7.4"></path>
@@ -18,6 +15,9 @@
           <path d="M10 18.7v-5h4v5"></path>
         </svg>
       </button>
+      <button class="category-tab" type="button" data-category-tab="human">인체용 의약품</button>
+      <button class="category-tab" type="button" data-category-tab="vet">동물용 의약품</button>
+      <button class="category-tab" type="button" data-category-tab="aquatic">수산동물용 의약품</button>
     </nav>
 
     <nav class="workspace-tabs" aria-label="작업 선택" hidden>

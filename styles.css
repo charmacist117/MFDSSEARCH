@@ -75,13 +75,12 @@ button {
 }
 
 .home-button {
-  margin-left: auto;
   display: grid;
   place-items: center;
   width: 48px;
   height: 40px;
   border: 0;
-  border-left: 1px solid #203b4b;
+  border-right: 1px solid #203b4b;
   background: #142c3a;
   color: #dce8ee;
   font-weight: 900;

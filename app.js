@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "changes-modal-fix-20260612-1";
+const API_VERSION = "global-search-fast-20260612-1";
 let compareSlotSeed = 0;
 const compareState = {
   slots: []
@@ -957,7 +957,7 @@ async function runHomeSearch() {
     const params = new URLSearchParams({ q: query, _v: API_VERSION });
     const response = await fetch(`/api/global-search?${params}`);
     if (!response.ok) {
-      throw new Error(`통합 검색 요청 실패 (${response.status})`);
+      throw new Error(`통합 검색 요청 실패 (${response.status}). 검색 범위가 넓어 시간이 초과됐습니다. 다시 검색하거나 조금 더 구체적인 단어를 입력해 주세요.`);
     }
     const payload = await response.json();
     homeSearchState.groups = payload.groups || [];

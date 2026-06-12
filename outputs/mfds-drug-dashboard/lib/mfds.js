@@ -128,19 +128,10 @@ function delay(ms) {
 }
 
 function isRetriableFetchError(error) {
-  if (error?.status >= 500) return true;
-  if (error?.name === "AbortError") return true;
-
-  const message = `${error?.message || ""} ${error?.cause?.message || ""}`.toLowerCase();
-  return [
-    "fetch failed",
-    "econnreset",
-    "etimedout",
-    "socket",
-    "terminated",
-    "timeout",
-    "network"
-  ].some((keyword) => message.includes(keyword));
+  if (error?.status && error?.status >= 400 && error?.status < 500) {
+    return false; // Do not retry client errors (400, 401, 403, 404, etc.)
+  }
+  return true; // Retry all other errors (5xx server errors, network errors, timeouts, SSL errors)
 }
 
 function httpsTextRequest(url, timeoutMs = 15000, redirectCount = 0) {
@@ -155,6 +146,7 @@ function httpsTextRequest(url, timeoutMs = 15000, redirectCount = 0) {
         method: "GET",
         headers: MFDS_HTTPS_HEADERS,
         timeout: timeoutMs,
+        rejectUnauthorized: false, // Bypass SSL validation for GPKI / government certs
         lookup(hostname, options, callback) {
           dns.lookup(hostname, { ...options, family: 4 }, callback);
         }
@@ -674,7 +666,9 @@ function parseDetailHtml(html, sourceUrl = "") {
 
 async function fetchSearchPage(query, page) {
   const url = buildSearchUrl({ ...query, page });
-  const { text } = await fetchMfdsText(url);
+  const timeoutMs = Number(valueOf(query.timeoutMs) || 15000);
+  const retries = Number(valueOf(query.retries) || 2);
+  const { text } = await fetchMfdsText(url, retries, timeoutMs);
   return { url, parsed: parseSearchHtml(text) };
 }
 
@@ -736,7 +730,9 @@ async function searchMfds(query = {}) {
   }
 
   const url = buildSearchUrl({ ...query, page });
-  const { text } = await fetchMfdsText(url);
+  const timeoutMs = Number(valueOf(query.timeoutMs) || 15000);
+  const retries = Number(valueOf(query.retries) || 2);
+  const { text } = await fetchMfdsText(url, retries, timeoutMs);
   const parsed = parseSearchHtml(text);
   let items = parsed.items;
   let total = parsed.total;
