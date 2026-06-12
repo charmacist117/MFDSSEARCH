@@ -4,21 +4,37 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>의약품 상세정보 대시보드</title>
-    <link rel="stylesheet" href="./styles.css?v=4">
+    <link rel="stylesheet" href="./styles.css?v=5">
   </head>
   <body>
     <nav class="category-tabs" aria-label="의약품 분류 선택">
-      <button class="category-tab active" type="button" data-category-tab="human">인체용 의약품</button>
+      <button class="category-tab" type="button" data-category-tab="human">인체용 의약품</button>
       <button class="category-tab" type="button" data-category-tab="vet">동물용 의약품</button>
       <button class="category-tab" type="button" data-category-tab="aquatic">수산동물용 의약품</button>
+      <button id="homeButton" class="home-button active" type="button" aria-label="홈 화면으로 이동">홈</button>
     </nav>
 
-    <nav class="workspace-tabs" aria-label="작업 선택">
+    <nav class="workspace-tabs" aria-label="작업 선택" hidden>
       <button class="workspace-tab active" type="button" data-workspace-tab="search">의약품 검색하기</button>
       <button class="workspace-tab" type="button" data-workspace-tab="compare">제품군 비교</button>
     </nav>
 
-    <div id="searchWorkspace" class="workspace-view">
+    <section id="homeWorkspace" class="home-workspace workspace-view">
+      <div class="home-panel">
+        <h1>의약품 통합 검색</h1>
+        <div class="home-category-options" role="tablist" aria-label="검색 분류">
+          <button class="active" type="button" data-home-category="human">인체용 의약품 검색</button>
+          <button type="button" data-home-category="vet">동물용 의약품 검색</button>
+          <button type="button" data-home-category="aquatic">수산동물용 의약품 검색</button>
+        </div>
+        <form id="homeSearchForm" class="home-search-form">
+          <input id="homeSearchInput" name="homeQuery" autocomplete="off" placeholder="어떤게 궁금하세요?">
+          <button type="submit">검색</button>
+        </form>
+      </div>
+    </section>
+
+    <div id="searchWorkspace" class="workspace-view" hidden>
       <div class="app-shell">
         <aside class="search-panel" aria-label="상세검색">
           <div class="panel-tabs">
@@ -274,6 +290,48 @@
             <input name="itemCategory" autocomplete="off">
           </label>
           <label>
+            <span>성분명1</span>
+            <input name="ingredient1" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명2</span>
+            <input name="ingredient2" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명3</span>
+            <input name="ingredient3" autocomplete="off">
+          </label>
+          <button type="button" class="collapse-toggle" id="extraIngredientToggleVet" aria-expanded="false" aria-controls="extraIngredientWrapVet">
+            <span>추가 성분 검색</span>
+            <span class="collapse-icon">▴</span>
+          </button>
+          <div class="extra-ingredients-wrap collapsed" id="extraIngredientWrapVet">
+            <label>
+              <span>성분명4</span>
+              <input name="ingredient4" autocomplete="off">
+            </label>
+            <label>
+              <span>성분명5</span>
+              <input name="ingredient5" autocomplete="off">
+            </label>
+          </div>
+          <label class="operator-line">
+            <span>효능효과</span>
+            <select name="efficacyOperator">
+              <option>AND</option>
+              <option>OR</option>
+            </select>
+            <input name="efficacyQuery" autocomplete="off">
+          </label>
+          <label class="operator-line">
+            <span>용법용량</span>
+            <select name="dosageOperator">
+              <option>AND</option>
+              <option>OR</option>
+            </select>
+            <input name="dosageQuery" autocomplete="off">
+          </label>
+          <label>
             <span>허가시작일</span>
             <input type="date" name="permitStart">
           </label>
@@ -339,8 +397,46 @@
             <input name="companyName" autocomplete="off">
           </label>
           <label>
-            <span>유효성분명</span>
-            <input name="ingredientName" autocomplete="off">
+            <span>성분명1</span>
+            <input name="ingredient1" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명2</span>
+            <input name="ingredient2" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명3</span>
+            <input name="ingredient3" autocomplete="off">
+          </label>
+          <button type="button" class="collapse-toggle" id="extraIngredientToggleAquatic" aria-expanded="false" aria-controls="extraIngredientWrapAquatic">
+            <span>추가 성분 검색</span>
+            <span class="collapse-icon">▴</span>
+          </button>
+          <div class="extra-ingredients-wrap collapsed" id="extraIngredientWrapAquatic">
+            <label>
+              <span>성분명4</span>
+              <input name="ingredient4" autocomplete="off">
+            </label>
+            <label>
+              <span>성분명5</span>
+              <input name="ingredient5" autocomplete="off">
+            </label>
+          </div>
+          <label class="operator-line">
+            <span>효능효과</span>
+            <select name="efficacyOperator">
+              <option>AND</option>
+              <option>OR</option>
+            </select>
+            <input name="efficacyQuery" autocomplete="off">
+          </label>
+          <label class="operator-line">
+            <span>용법용량</span>
+            <select name="dosageOperator">
+              <option>AND</option>
+              <option>OR</option>
+            </select>
+            <input name="dosageQuery" autocomplete="off">
           </label>
           <label>
             <span>어종명</span>
@@ -399,6 +495,6 @@
       </main>
     </section>
 
-    <script src="./app.js?v=11"></script>
+    <script src="./app.js?v=13"></script>
   </body>
 </html>

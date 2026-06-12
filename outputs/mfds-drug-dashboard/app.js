@@ -33,6 +33,11 @@ const pageInfo = document.querySelector("#pageInfo");
 const statusText = document.querySelector("#statusText");
 const categoryTabs = document.querySelectorAll("[data-category-tab]");
 const workspaceTabs = document.querySelectorAll("[data-workspace-tab]");
+const homeWorkspace = document.querySelector("#homeWorkspace");
+const homeButton = document.querySelector("#homeButton");
+const homeSearchForm = document.querySelector("#homeSearchForm");
+const homeSearchInput = document.querySelector("#homeSearchInput");
+const homeCategoryButtons = document.querySelectorAll("[data-home-category]");
 const searchWorkspace = document.querySelector("#searchWorkspace");
 const compareWorkspace = document.querySelector("#compareWorkspace");
 const vetWorkspace = document.querySelector("#vetWorkspace");
@@ -40,15 +45,16 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "unitdose-batch-1";
+const API_VERSION = "external-home-20260612-1";
 let compareSlotSeed = 0;
 const compareState = {
   slots: []
 };
 const externalStates = {
-  vet: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {} },
-  aquatic: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {} }
+  vet: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {}, columnWidths: {} },
+  aquatic: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {}, columnWidths: {} }
 };
+let homeCategory = "human";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -270,6 +276,21 @@ function buildExternalParams(dashboard) {
   return params;
 }
 
+function renderExternalHeaders(dashboard) {
+  const headerRow = dashboard.body?.closest("table")?.querySelector("thead tr");
+  if (!headerRow) return;
+  const defaultWidths =
+    dashboard.kind === "vet"
+      ? [210, 150, 110, 100, 260]
+      : [120, 220, 160, 100, 110, 110, 110];
+  headerRow.innerHTML = dashboard.columns
+    .map((column, index) => {
+      const width = dashboard.state.columnWidths[column.key] || defaultWidths[index] || 120;
+      return `<th data-column-key="${escapeHtml(column.key)}" style="width: ${width}px;"><div class="th-wrapper">${escapeHtml(column.label)}</div></th>`;
+    })
+    .join("");
+}
+
 function externalRowKey(row, index = 0) {
   return row.detailKey || row.sourceUrl || [row.permitNumber, row.itemName, row.entpName, row.permitDate, index].filter(Boolean).join("|") || String(index);
 }
@@ -304,17 +325,56 @@ function externalBasicPairs(kind, row) {
   ];
 }
 
-function renderExternalTablePreview(rows) {
+function looksLikeHeaderRow(row) {
+  return row?.some((cell) => /성분|분량|함량|단위|규격|체중|투여|용량|어종|질병|순번/i.test(String(cell || "")));
+}
+
+function renderExternalTableBlock(title, rows) {
   if (!rows?.length) return "";
+  const header = looksLikeHeaderRow(rows[0]) ? rows[0] : null;
+  const bodyRows = header ? rows.slice(1) : rows;
+  if (!bodyRows.length) return "";
   const maxColumnCount = Math.max(...rows.map((row) => row.length));
-  const columns = Array.from({ length: maxColumnCount }, (_, index) => ({ key: String(index), label: `항목 ${index + 1}` }));
-  const normalized = rows.map((row) =>
+  const columns = Array.from({ length: maxColumnCount }, (_, index) => ({
+    key: String(index),
+    label: header?.[index] || `항목 ${index + 1}`
+  }));
+  const normalized = bodyRows.map((row) =>
     columns.reduce((acc, column, index) => {
       acc[column.key] = row[index] || "";
       return acc;
     }, {})
   );
-  return renderTable("원문 표", normalized, columns);
+  return renderTable(title || "상세 표", normalized, columns);
+}
+
+function renderExternalTablePreview(tables) {
+  if (!tables?.length) return "";
+  return tables
+    .map((table, index) => {
+      const rows = Array.isArray(table) ? table : table.rows;
+      const title = Array.isArray(table) ? `상세 표 ${index + 1}` : table.title;
+      return renderExternalTableBlock(title, rows);
+    })
+    .join("");
+}
+
+function renderExternalIngredientRows(rows) {
+  if (!rows?.length) return "";
+  return renderTable("원료약품 및 분량", rows, [
+    { key: "name", label: "성분명" },
+    { key: "amount", label: "분량" },
+    { key: "unit", label: "단위" },
+    { key: "note", label: "비고" }
+  ]);
+}
+
+function renderExternalSections(sections) {
+  if (!sections?.length) return "";
+  return sections
+    .filter((section) => section.title !== "원료약품 및 분량")
+    .map((section) => renderTextSection(section.title, section.text, true))
+    .join("");
 }
 
 function renderExternalDetail(kind) {
@@ -352,8 +412,10 @@ function renderExternalDetail(kind) {
       ${isLoading ? `<p class="table-message">상세정보를 불러오는 중입니다.</p>` : ""}
       ${detail.error ? `<p class="table-message error">상세 원문을 가져오지 못했습니다: ${escapeHtml(detail.error)}</p>` : ""}
       ${renderKeyValue("기본정보", mergedPairs)}
+      ${renderExternalIngredientRows(detail.ingredientRows)}
+      ${renderExternalSections(detail.sections)}
       ${detail.summary ? renderTextSection("원문 텍스트", detail.summary, true) : ""}
-      ${renderExternalTablePreview(detail.tables)}
+      ${renderExternalTablePreview((detail.tables || []).filter((table) => !(detail.ingredientRows?.length && table.title === "원료약품 및 분량")))}
       ${row.hasDetailUrl === false ? `<p class="muted">이 항목은 목록 원문에서 별도 상세 주소가 확인되지 않아 목록 정보를 우선 표시합니다.</p>` : ""}
     </div>
   `;
@@ -364,6 +426,7 @@ function renderExternalDashboard(kind) {
   const { state } = dashboard;
   if (!dashboard.body) return;
   renderExternalDetail(kind);
+  renderExternalHeaders(dashboard);
 
   dashboard.count.innerHTML = `총 <strong>${state.total.toLocaleString("ko-KR")}</strong> 건`;
   dashboard.pageInfo.textContent = `${state.page.toLocaleString("ko-KR")} / ${state.totalPages.toLocaleString("ko-KR")}`;
@@ -405,6 +468,7 @@ function renderExternalDashboard(kind) {
       `;
     })
     .join("");
+  initColumnResize(dashboard.body.closest("table"), state.columnWidths);
 }
 
 async function loadExternalResults(kind, { resetPage = false } = {}) {
@@ -629,6 +693,48 @@ function compareSelectedRow(slot) {
 
 function compareSelectedDrug(slot) {
   return slot.detailCache[slot.selectedSeq] || compareSelectedRow(slot);
+}
+
+function setHomeCategory(categoryName) {
+  homeCategory = categoryName || "human";
+  homeCategoryButtons.forEach((button) => {
+    const active = button.dataset.homeCategory === homeCategory;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+}
+
+function showHome() {
+  categoryTabs.forEach((button) => {
+    button.classList.remove("active");
+    button.setAttribute("aria-selected", "false");
+  });
+  homeButton?.classList.add("active");
+  document.querySelector(".workspace-tabs")?.setAttribute("hidden", "");
+  if (homeWorkspace) homeWorkspace.hidden = false;
+  if (searchWorkspace) searchWorkspace.hidden = true;
+  if (compareWorkspace) compareWorkspace.hidden = true;
+  if (vetWorkspace) vetWorkspace.hidden = true;
+  if (aquaticWorkspace) aquaticWorkspace.hidden = true;
+  document.body.classList.remove("compare-mode", "table-only");
+  setHomeCategory(homeCategory);
+}
+
+function runHomeSearch() {
+  const query = homeSearchInput?.value.trim() || "";
+  if (homeCategory === "human") {
+    setCategoryTab("human");
+    setWorkspaceTab("search");
+    if (form?.elements?.productName) form.elements.productName.value = query;
+    loadResults({ resetPage: true });
+    return;
+  }
+
+  const kind = homeCategory === "aquatic" ? "aquatic" : "vet";
+  setCategoryTab(kind);
+  const dashboard = externalDashboard(kind);
+  if (dashboard.form?.elements?.productName) dashboard.form.elements.productName.value = query;
+  loadExternalResults(kind, { resetPage: true });
 }
 
 function renderCompareRows(slot) {
@@ -931,7 +1037,11 @@ async function fetchAndCacheDetail(itemSeq) {
 async function requestDetail(itemSeq) {
   const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`);
   if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
-  return response.json();
+  const payload = await response.json();
+  if (payload.error) {
+    throw new Error(payload.detailError || payload.error);
+  }
+  return payload;
 }
 
 async function requestDetailBatch(itemSeqs) {
@@ -1344,7 +1454,61 @@ function toCsvValue(value) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-function downloadCsv() {
+async function downloadCsv() {
+  csvButton.disabled = true;
+  csvButton.textContent = "⏳";
+
+  try {
+    const query = Object.fromEntries(new FormData(form).entries());
+    Object.assign(query, state.filters);
+    // Remove empty values
+    for (const key of Object.keys(query)) {
+      if (!query[key]) delete query[key];
+    }
+
+    // Pass client-side detail cache to avoid re-fetching
+    const cache = {};
+    for (const [seq, detail] of Object.entries(state.detailCache)) {
+      if (detail && (detail.contractManufacturer || detail.performance)) {
+        cache[seq] = {
+          contractManufacturer: detail.contractManufacturer || "",
+          atcCode: detail.atcCode || "",
+          standardCode: detail.standardCode || "",
+          unitDose: detail.unitDose || "",
+          mainIngredient: detail.mainIngredient || "",
+          performance: detail.performance || null
+        };
+      }
+    }
+
+    const response = await fetch("/api/csv", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, cache })
+    });
+
+    if (!response.ok) {
+      throw new Error(`CSV 생성 실패 (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `mfds-drugs-all-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.warn("Server CSV failed, falling back to client-side:", error.message);
+    // Fallback: client-side CSV for current page only
+    downloadCsvClientSide();
+  } finally {
+    csvButton.disabled = false;
+    csvButton.textContent = "CSV";
+  }
+}
+
+function downloadCsvClientSide() {
   const perfYears = getPerformanceYears();
   const headers = [
     ["rowNumber", "순번"],
@@ -1486,6 +1650,8 @@ detailPanel.addEventListener("click", (event) => {
 });
 
 function setWorkspaceTab(tabName) {
+  if (homeWorkspace) homeWorkspace.hidden = true;
+  homeButton?.classList.remove("active");
   workspaceTabs.forEach((button) => {
     const active = button.dataset.workspaceTab === tabName;
     button.classList.toggle("active", active);
@@ -1505,6 +1671,8 @@ function currentHumanTab() {
 }
 
 function setCategoryTab(categoryName) {
+  if (homeWorkspace) homeWorkspace.hidden = true;
+  homeButton?.classList.remove("active");
   categoryTabs.forEach((button) => {
     const active = button.dataset.categoryTab === categoryName;
     button.classList.toggle("active", active);
@@ -1567,6 +1735,33 @@ workspaceTabs.forEach((button) => {
   });
 });
 
+homeCategoryButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setHomeCategory(button.dataset.homeCategory);
+    homeSearchInput?.focus();
+  });
+});
+
+homeSearchForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  runHomeSearch();
+});
+
+homeSearchInput?.addEventListener("focus", () => {
+  if (!homeSearchInput.dataset.placeholder) {
+    homeSearchInput.dataset.placeholder = homeSearchInput.placeholder || "어떤게 궁금하세요?";
+  }
+  homeSearchInput.placeholder = "";
+});
+
+homeSearchInput?.addEventListener("blur", () => {
+  if (!homeSearchInput.value) {
+    homeSearchInput.placeholder = homeSearchInput.dataset.placeholder || "어떤게 궁금하세요?";
+  }
+});
+
+homeButton?.addEventListener("click", showHome);
+
 categoryTabs.forEach((button) => {
   button.addEventListener("click", () => {
     setCategoryTab(button.dataset.categoryTab);
@@ -1583,6 +1778,13 @@ categoryTabs.forEach((button) => {
   });
 
   dashboard.form.addEventListener("reset", () => {
+    const prefix = kind === "vet" ? "Vet" : "Aquatic";
+    const extraWrap = document.querySelector(`#extraIngredientWrap${prefix}`);
+    const toggle = document.querySelector(`#extraIngredientToggle${prefix}`);
+    if (extraWrap && !extraWrap.classList.contains("collapsed")) {
+      extraWrap.classList.add("collapsed");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    }
     setTimeout(() => loadExternalResults(kind, { resetPage: true }), 0);
   });
 
@@ -1750,15 +1952,19 @@ csvButton.addEventListener("click", downloadCsv);
 
 /* ── Collapsible extra ingredients toggle ── */
 
-const extraToggle = document.querySelector("#extraIngredientToggle");
-const extraWrap = document.querySelector("#extraIngredientWrap");
-
-if (extraToggle && extraWrap) {
-  extraToggle.addEventListener("click", () => {
-    const isCollapsed = extraWrap.classList.toggle("collapsed");
-    extraToggle.setAttribute("aria-expanded", String(!isCollapsed));
-  });
+function initCollapsible(toggleId, wrapId) {
+  const toggle = document.querySelector(toggleId);
+  const wrap = document.querySelector(wrapId);
+  if (toggle && wrap) {
+    toggle.addEventListener("click", () => {
+      const isCollapsed = wrap.classList.toggle("collapsed");
+      toggle.setAttribute("aria-expanded", String(!isCollapsed));
+    });
+  }
 }
+initCollapsible("#extraIngredientToggle", "#extraIngredientWrap");
+initCollapsible("#extraIngredientToggleVet", "#extraIngredientWrapVet");
+initCollapsible("#extraIngredientToggleAquatic", "#extraIngredientWrapAquatic");
 
 /* ── Draggable layout splitter ── */
 
@@ -1799,8 +2005,7 @@ if (splitter && contentGrid) {
 
 /* ── Resizable table column headers ── */
 
-function initColumnResize() {
-  const table = document.querySelector(".result-table");
+function initColumnResize(table = document.querySelector(".result-table"), widthStore = state.columnWidths) {
   if (!table) return;
   const headerRow = table.querySelector("thead tr");
   if (!headerRow) return;
@@ -1822,6 +2027,8 @@ function initColumnResize() {
       handle.className = "col-resize-handle";
       wrapper.appendChild(handle);
     }
+    if (handle.dataset.resizeBound === "true") return;
+    handle.dataset.resizeBound = "true";
 
     let startX = 0;
     let startWidth = 0;
@@ -1836,14 +2043,14 @@ function initColumnResize() {
       const consumed = newWidth - startWidth;
       
       th.style.width = `${newWidth}px`;
-      const thName = th.textContent.trim();
-      state.columnWidths[thName] = newWidth;
+      const thName = th.dataset.columnKey || th.textContent.trim();
+      widthStore[thName] = newWidth;
       
       if (nextTh) {
         const newNext = Math.max(40, nextStartWidth - consumed);
         nextTh.style.width = `${newNext}px`;
-        const nextThName = nextTh.textContent.trim();
-        state.columnWidths[nextThName] = newNext;
+        const nextThName = nextTh.dataset.columnKey || nextTh.textContent.trim();
+        widthStore[nextThName] = newNext;
       }
     };
 
@@ -1876,4 +2083,4 @@ function initColumnResize() {
   });
 }
 
-loadResults();
+showHome();
