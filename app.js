@@ -45,7 +45,6 @@ const homeButton = document.querySelector("#homeButton");
 const homeSearchForm = document.querySelector("#homeSearchForm");
 const homeSearchInput = document.querySelector("#homeSearchInput");
 const homeSearchResults = document.querySelector("#homeSearchResults");
-const homeCategoryButtons = document.querySelectorAll("[data-home-category]");
 const searchWorkspace = document.querySelector("#searchWorkspace");
 const compareWorkspace = document.querySelector("#compareWorkspace");
 const vetWorkspace = document.querySelector("#vetWorkspace");
@@ -53,7 +52,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "search-optimized-20260615-1";
+const API_VERSION = "search-optimized-20260615-2";
 const HOME_PREVIEW_LIMIT = 3;
 let compareSlotSeed = 0;
 const compareState = {
@@ -63,7 +62,6 @@ const externalStates = {
   vet: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {}, columnWidths: {} },
   aquatic: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {}, columnWidths: {} }
 };
-let homeCategory = "human";
 let activeSearchKeyword = "";
 const homeSearchState = {
   keyword: "",
@@ -725,15 +723,6 @@ function compareSelectedDrug(slot) {
   return slot.detailCache[slot.selectedSeq] || compareSelectedRow(slot);
 }
 
-function setHomeCategory(categoryName) {
-  homeCategory = categoryName || "human";
-  homeCategoryButtons.forEach((button) => {
-    const active = button.dataset.homeCategory === homeCategory;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-selected", String(active));
-  });
-}
-
 function showHome() {
   closeChanges();
   categoryTabs.forEach((button) => {
@@ -748,7 +737,6 @@ function showHome() {
   if (vetWorkspace) vetWorkspace.hidden = true;
   if (aquaticWorkspace) aquaticWorkspace.hidden = true;
   document.body.classList.remove("compare-mode", "table-only");
-  setHomeCategory(homeCategory);
 }
 
 function homeResultId(category, index) {
@@ -2064,13 +2052,6 @@ function applyRangeToForm(formEl, range) {
 workspaceTabs.forEach((button) => {
   button.addEventListener("click", () => {
     setWorkspaceTab(button.dataset.workspaceTab);
-  });
-});
-
-homeCategoryButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    setHomeCategory(button.dataset.homeCategory);
-    homeSearchInput?.focus();
   });
 });
 
