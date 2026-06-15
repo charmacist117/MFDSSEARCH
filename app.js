@@ -1886,6 +1886,22 @@ function downloadCsvClientSide(category = "human") {
 }
 
 async function downloadCsvServerSide(category = "human") {
+  let total = 0;
+  if (category === "vet") {
+    total = externalStates.vet.total || 0;
+  } else if (category === "aquatic") {
+    total = externalStates.aquatic.total || 0;
+  } else {
+    total = state.total || 0;
+  }
+
+  if (total > 300) {
+    const message = `검색 결과가 300건을 초과합니다 (${total.toLocaleString("ko-KR")}건).\n실시간 데이터 수집 제한으로 인해 처음 300건까지만 다운로드됩니다. 전체 데이터를 보시려면 상세 검색 조건(제품명, 업체명 등)을 입력하여 검색 결과를 300건 이하로 좁혀주세요.\n\n계속해서 처음 300건을 다운로드하시겠습니까?`;
+    if (!confirm(message)) {
+      return;
+    }
+  }
+
   const statusEl = document.querySelector("#statusText");
   const originalStatus = statusEl?.textContent || "";
   if (statusEl) statusEl.textContent = "CSV 데이터를 추출하여 다운로드하는 중...";
