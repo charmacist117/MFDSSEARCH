@@ -53,7 +53,8 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "global-search-fast-20260612-1";
+const API_VERSION = "global-search-contract-20260615-1";
+const HOME_PREVIEW_LIMIT = 3;
 let compareSlotSeed = 0;
 const compareState = {
   slots: []
@@ -68,8 +69,7 @@ const homeSearchState = {
   keyword: "",
   loading: false,
   error: "",
-  groups: [],
-  expanded: {}
+  groups: []
 };
 
 function escapeHtml(value) {
@@ -778,14 +778,14 @@ function renderHomeResults() {
   const groupsHtml = homeSearchState.groups
     .map((group) => {
       const items = group.items || [];
-      const expanded = Boolean(homeSearchState.expanded[group.key]);
-      const visible = expanded ? items : items.slice(0, 3);
-      const moreCount = Math.max(0, items.length - 3);
+      const visible = items.slice(0, HOME_PREVIEW_LIMIT);
+      const total = Math.max(Number(group.total || 0), items.length);
+      const moreCount = Math.max(0, total - visible.length);
       return `
         <section class="home-result-group">
           <header>
             <h2>${escapeHtml(group.label)}</h2>
-            <span>${items.length.toLocaleString("ko-KR")}건</span>
+            <span>${total.toLocaleString("ko-KR")}건</span>
           </header>
           ${
             group.error
@@ -808,7 +808,7 @@ function renderHomeResults() {
           }
           ${
             moreCount > 0
-              ? `<button class="home-more-button" type="button" data-home-more="${escapeHtml(group.key)}">${expanded ? "접기" : `+ 더보기 ${moreCount}건`}</button>`
+              ? `<button class="home-more-button" type="button" data-home-open-category="${escapeHtml(group.key)}">${escapeHtml(group.label)} 전체 검색결과 보기</button>`
               : ""
           }
         </section>
@@ -819,8 +819,73 @@ function renderHomeResults() {
   homeSearchResults.innerHTML = groupsHtml;
 }
 
-function setFormProductName(formEl, value) {
-  if (formEl?.elements?.productName) formEl.elements.productName.value = value || "";
+function clearSearchFormFields(formEl) {
+  if (!formEl) return;
+  Array.from(formEl.elements).forEach((element) => {
+    if (!element.name) return;
+    if (element.tagName === "SELECT") {
+      element.value = "AND";
+      return;
+    }
+    if (element.type === "checkbox" || element.type === "radio") {
+      element.checked = element.defaultChecked;
+      return;
+    }
+    element.value = "";
+  });
+}
+
+function resetHumanSearchFilters() {
+  state.filters = {
+    itemCategory: "",
+    cancelStatus: "",
+    etcOtc: "",
+    makeMaterial: ""
+  };
+  form.querySelectorAll(".segmented").forEach((group) => {
+    group.querySelectorAll("button").forEach((button) => {
+      button.classList.toggle("active", button.dataset.value === "");
+    });
+  });
+  form.querySelectorAll(".quick-dates button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.range === "");
+  });
+}
+
+function preferredHomeMatchLabel(group, fallback = "제품명") {
+  const counts = new Map();
+  for (const item of group?.items || []) {
+    const labels = [...(item.matchFields || []), item.matchLabel].filter(Boolean);
+    for (const label of labels) {
+      counts.set(label, (counts.get(label) || 0) + 1);
+    }
+  }
+  if (!counts.size) return fallback;
+  const priority = ["제품명", "효능효과", "위탁생산업체", "성분명", "업체명"];
+  return [...counts.entries()].sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    const aPriority = priority.includes(a[0]) ? priority.indexOf(a[0]) : priority.length;
+    const bPriority = priority.includes(b[0]) ? priority.indexOf(b[0]) : priority.length;
+    return aPriority - bPriority;
+  })[0][0];
+}
+
+function applyHomeKeywordToForm(formEl, label, keyword) {
+  clearSearchFormFields(formEl);
+  if (!formEl?.elements) return;
+  const fields = formEl.elements;
+  if (label === "효능효과" && fields.efficacyQuery) {
+    fields.efficacyOperator.value = "AND";
+    fields.efficacyQuery.value = keyword || "";
+  } else if (label === "위탁생산업체" && fields.contractManufacturer) {
+    fields.contractManufacturer.value = keyword || "";
+  } else if (label === "성분명" && fields.ingredient1) {
+    fields.ingredient1.value = keyword || "";
+  } else if (label === "업체명" && fields.companyName) {
+    fields.companyName.value = keyword || "";
+  } else if (fields.productName) {
+    fields.productName.value = keyword || "";
+  }
 }
 
 function openHomeHumanResult(result) {
@@ -828,7 +893,8 @@ function openHomeHumanResult(result) {
   const rows = (group?.items || []).map((item, index) => ({ ...item.row, rowNumber: String(index + 1) }));
   setCategoryTab("human");
   setWorkspaceTab("search");
-  setFormProductName(form, homeSearchState.keyword);
+  resetHumanSearchFilters();
+  applyHomeKeywordToForm(form, result.matchLabel || preferredHomeMatchLabel(group), homeSearchState.keyword);
   state.rows = rows;
   state.total = rows.length;
   state.page = 1;
@@ -847,10 +913,11 @@ function openHomeHumanResult(result) {
 function openHomeExternalResult(category, result) {
   const group = homeSearchState.groups.find((item) => item.key === category);
   const rows = (group?.items || []).map((item, index) => ({ ...item.row, rowNumber: item.row.rowNumber || String(index + 1) }));
-  setCategoryTab(category);
   const dashboard = externalDashboard(category);
-  setFormProductName(dashboard.form, homeSearchState.keyword);
   const extState = dashboard.state;
+  extState.loaded = true;
+  setCategoryTab(category);
+  applyHomeKeywordToForm(dashboard.form, result.matchLabel || preferredHomeMatchLabel(group), homeSearchState.keyword);
   extState.rows = rows;
   extState.total = rows.length;
   extState.page = 1;
@@ -870,6 +937,29 @@ function openHomeExternalResult(category, result) {
   extState.selectedKey = selectedKey;
   renderExternalDashboard(category);
   loadExternalDetail(category, selectedKey);
+}
+
+function openHomeCategoryResults(category) {
+  const group = homeSearchState.groups.find((item) => item.key === category);
+  if (!group || !homeSearchState.keyword) return;
+  const label = preferredHomeMatchLabel(group);
+  activeSearchKeyword = homeSearchState.keyword;
+
+  if (category === "human") {
+    setCategoryTab("human");
+    setWorkspaceTab("search");
+    resetHumanSearchFilters();
+    applyHomeKeywordToForm(form, label, homeSearchState.keyword);
+    loadResults({ resetPage: true });
+    return;
+  }
+
+  const dashboard = externalDashboard(category);
+  dashboard.state.loaded = true;
+  dashboard.state.page = 1;
+  applyHomeKeywordToForm(dashboard.form, label, homeSearchState.keyword);
+  setCategoryTab(category);
+  loadExternalResults(category, { resetPage: true });
 }
 
 function openHomeResult(category, index) {
@@ -949,7 +1039,6 @@ async function runHomeSearch() {
   homeSearchState.loading = Boolean(query);
   homeSearchState.error = "";
   homeSearchState.groups = [];
-  homeSearchState.expanded = {};
   renderHomeResults();
   if (!query) return;
 
@@ -1982,11 +2071,9 @@ homeSearchForm?.addEventListener("submit", (event) => {
 });
 
 homeSearchResults?.addEventListener("click", (event) => {
-  const moreButton = event.target.closest("[data-home-more]");
-  if (moreButton) {
-    const key = moreButton.dataset.homeMore;
-    homeSearchState.expanded[key] = !homeSearchState.expanded[key];
-    renderHomeResults();
+  const openCategoryButton = event.target.closest("[data-home-open-category]");
+  if (openCategoryButton) {
+    openHomeCategoryResults(openCategoryButton.dataset.homeOpenCategory);
     return;
   }
 

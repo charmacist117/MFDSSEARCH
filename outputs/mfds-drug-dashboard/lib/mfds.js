@@ -695,7 +695,9 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
   const nativeQuery = stripDerivedSearchFields(query);
 
   let { url, parsed } = await fetchSearchPage(nativeQuery, page);
-  let items = await enrichContractCandidates(parsed.items, contractManufacturer);
+  const candidateLimit = Math.max(Number(valueOf(query.contractCandidateLimit) || 0), 0);
+  const candidateItems = candidateLimit ? parsed.items.slice(0, candidateLimit) : parsed.items;
+  let items = await enrichContractCandidates(candidateItems, contractManufacturer);
   let total = items.length;
   let sourceUrl = url;
   let notice = `${CONTRACT_SEARCH_NOTICE} MFDS 목록 검색 조건에 없는 필드라 현재 조회된 목록의 상세정보 기준으로 확인합니다.`;

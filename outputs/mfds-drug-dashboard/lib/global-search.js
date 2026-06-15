@@ -1,8 +1,8 @@
 const { searchMfds } = require("./mfds");
 const { searchVetMedicines, searchAquaticMedicines } = require("./public-medicines");
 
-const GROUP_LIMIT = 9;
-const FAST_OPTIONS = { page: 1, timeoutMs: 6500, retries: 1, _global: "1" };
+const GROUP_LIMIT = 12;
+const FAST_OPTIONS = { page: 1, timeoutMs: 5500, retries: 1, _global: "1" };
 
 function valueOf(value) {
   if (Array.isArray(value)) return value[0] || "";
@@ -42,7 +42,7 @@ function mergeResult(map, key, result) {
   if (!existing.snippet && result.snippet) existing.snippet = result.snippet;
 }
 
-function searchQueries(keyword) {
+function baseSearchQueries(keyword) {
   return [
     { label: "제품명", query: { productName: keyword } },
     { label: "업체명", query: { companyName: keyword } },
@@ -51,11 +51,19 @@ function searchQueries(keyword) {
   ];
 }
 
+function humanSearchQueries(keyword) {
+  return [
+    ...baseSearchQueries(keyword),
+    { label: "위탁생산업체", query: { contractManufacturer: keyword, contractCandidateLimit: 3 } }
+  ];
+}
+
 function humanSnippet(row, keyword, label) {
   const fields = [
     ["제품명", row.itemName],
     ["업체명", row.entpName],
     ["성분명", row.mainIngredient],
+    ["위탁생산업체", row.contractManufacturer],
     ["허가일", row.permitDate]
   ];
   const matched = fields.find(([, value]) => includesKeyword(value, keyword));
@@ -76,8 +84,8 @@ function externalSnippet(row, keyword, label) {
   return { matchLabel: label, snippet: compactText(row.note || row.itemCategory || row.dosageForm || row.entpName || row.itemName || `${label}에서 검색됨`) };
 }
 
-async function settledSearches(searchFn, keyword) {
-  const searches = searchQueries(keyword);
+async function settledSearches(searchFn, keyword, queryBuilder = baseSearchQueries) {
+  const searches = queryBuilder(keyword);
   const pages = await Promise.allSettled(
     searches.map((item) => searchFn({ ...FAST_OPTIONS, ...item.query }))
   );
@@ -86,11 +94,13 @@ async function settledSearches(searchFn, keyword) {
 
 async function buildHumanGroup(keyword) {
   const map = new Map();
-  const { searches, pages } = await settledSearches(searchMfds, keyword);
+  const { searches, pages } = await settledSearches(searchMfds, keyword, humanSearchQueries);
+  let total = 0;
 
   for (let i = 0; i < pages.length; i += 1) {
     const result = pages[i];
     if (result.status !== "fulfilled") continue;
+    total = Math.max(total, Number(result.value.total || 0));
     const label = searches[i].label;
     for (const row of (result.value.items || []).slice(0, GROUP_LIMIT)) {
       const matched = humanSnippet(row, keyword, label);
@@ -112,7 +122,7 @@ async function buildHumanGroup(keyword) {
   return {
     key: "human",
     label: "인체용 의약품",
-    total: map.size,
+    total: Math.max(total, map.size),
     items: Array.from(map.values()).slice(0, GROUP_LIMIT)
   };
 }
@@ -121,10 +131,12 @@ async function buildExternalGroup(kind, keyword) {
   const searchFn = kind === "aquatic" ? searchAquaticMedicines : searchVetMedicines;
   const map = new Map();
   const { searches, pages } = await settledSearches(searchFn, keyword);
+  let total = 0;
 
   for (let i = 0; i < pages.length; i += 1) {
     const result = pages[i];
     if (result.status !== "fulfilled") continue;
+    total = Math.max(total, Number(result.value.total || 0));
     const label = searches[i].label;
     for (const row of (result.value.items || []).slice(0, GROUP_LIMIT)) {
       const key = row.detailKey || row.sourceUrl || `${row.permitNumber || ""}:${row.itemName}:${row.entpName}`;
@@ -147,7 +159,7 @@ async function buildExternalGroup(kind, keyword) {
   return {
     key: kind,
     label: kind === "aquatic" ? "수산동물용 의약품" : "동물용 의약품",
-    total: map.size,
+    total: Math.max(total, map.size),
     items: Array.from(map.values()).slice(0, GROUP_LIMIT)
   };
 }
