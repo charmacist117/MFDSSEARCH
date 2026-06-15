@@ -1782,6 +1782,25 @@ function render() {
   renderDetail();
 }
 
+const downloadedFilenames = new Set();
+
+function getUniqueFilename(baseName) {
+  const dotIndex = baseName.lastIndexOf(".");
+  const name = dotIndex !== -1 ? baseName.slice(0, dotIndex) : baseName;
+  const ext = dotIndex !== -1 ? baseName.slice(dotIndex) : "";
+
+  let uniqueName = baseName;
+  let counter = 1;
+
+  while (downloadedFilenames.has(uniqueName)) {
+    uniqueName = `${name} (${counter})${ext}`;
+    counter += 1;
+  }
+
+  downloadedFilenames.add(uniqueName);
+  return uniqueName;
+}
+
 function toCsvValue(value) {
   const text = Array.isArray(value) ? value.join("; ") : String(value ?? "");
   return `"${text.replaceAll('"', '""')}"`;
@@ -1876,13 +1895,17 @@ function downloadCsvClientSide(category = "human") {
     filename = `human-drugs-page-${state.page}-${new Date().toISOString().slice(0, 10)}.csv`;
   }
 
+  const uniqueFilename = getUniqueFilename(filename);
+
   const blob = new Blob(["\ufeff", lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = filename;
+  link.download = uniqueFilename;
   link.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 250);
 }
 
 async function downloadCsvServerSide(category = "human") {
@@ -1942,11 +1965,15 @@ async function downloadCsvServerSide(category = "human") {
 
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
+    const filename = `${category}-drugs-all-${new Date().toISOString().slice(0, 10)}.csv`;
+    const uniqueFilename = getUniqueFilename(filename);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${category}-drugs-all-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = uniqueFilename;
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 250);
   } catch (error) {
     console.warn("Server CSV failed, falling back to client-side:", error.message);
     alert("전체 결과 CSV 생성을 완료하지 못해 현재 페이지만 다운로드합니다.");
