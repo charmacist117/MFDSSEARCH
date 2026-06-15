@@ -115,7 +115,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/changes") {
-      sendJson(res, 200, changesForCategory(url.searchParams.get("category") || "human"));
+      sendJson(res, 200, await changesForCategory(url.searchParams.get("category") || "human"));
       return;
     }
 
@@ -125,7 +125,7 @@ const server = http.createServer(async (req, res) => {
         "content-type": "text/csv; charset=utf-8",
         "content-disposition": `attachment; filename=medicine-changes-${category}.csv`
       });
-      res.end(changesCsv(category));
+      res.end(await changesCsv(category));
       return;
     }
 

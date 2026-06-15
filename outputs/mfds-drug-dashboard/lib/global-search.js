@@ -4,7 +4,7 @@ const { searchVetMedicines, searchAquaticMedicines } = require("./public-medicin
 const GROUP_LIMIT = 12;
 const GLOBAL_CACHE_TTL_MS = 2 * 60 * 1000;
 const GLOBAL_CACHE_LIMIT = 80;
-const QUERY_BUDGET_MS = 4300;
+const QUERY_BUDGET_MS = 8200;
 const FAST_OPTIONS = { page: 1, timeoutMs: 3600, retries: 1, fastFail: "1", _global: "1" };
 const globalMemoryCache = new Map();
 const pendingGlobalSearches = new Map();
@@ -91,6 +91,10 @@ function baseSearchQueries(keyword) {
   ];
 }
 
+function reliableHumanQuery(query) {
+  return { ...query, timeoutMs: 6500, retries: 1, fastFail: "0" };
+}
+
 function efficacyTerms(keyword) {
   const source = compactText(keyword);
   const normalized = source.replace(/\s+/g, "");
@@ -122,10 +126,13 @@ function externalSearchQueries(keyword) {
 
 function humanSearchQueries(keyword) {
   return [
-    ...baseSearchQueries(keyword),
+    ...baseSearchQueries(keyword).map((item) => ({
+      ...item,
+      query: reliableHumanQuery(item.query)
+    })),
     {
       label: "위탁생산업체",
-      query: { contractManufacturer: keyword, contractCandidateLimit: 2, detailTimeoutMs: 2800, detailRetries: 1 }
+      query: reliableHumanQuery({ contractManufacturer: keyword, contractCandidateLimit: 2, detailTimeoutMs: 3200, detailRetries: 1 })
     }
   ];
 }
@@ -156,6 +163,26 @@ function externalSnippet(row, keyword, label) {
   return { matchLabel: label, snippet: compactText(row.note || row.itemCategory || row.dosageForm || row.entpName || row.itemName || `${label}에서 검색됨`) };
 }
 
+function externalVisibleText(row) {
+  return [
+    row.itemName,
+    row.entpName,
+    row.itemEngName,
+    row.mainIngredient,
+    row.note,
+    row.itemCategory,
+    row.dosageForm,
+    row.route,
+    row.condition,
+    row.permitNumber,
+    ...(row.rawCells || [])
+  ].filter(Boolean).join(" ");
+}
+
+function isTrustedExternalRow(row, searchTerm) {
+  return includesKeyword(externalVisibleText(row), searchTerm);
+}
+
 async function settledSearches(searchFn, keyword, queryBuilder = baseSearchQueries) {
   const searches = queryBuilder(keyword);
   const pages = await Promise.allSettled(
@@ -168,10 +195,12 @@ async function buildHumanGroup(keyword) {
   const map = new Map();
   const { searches, pages } = await settledSearches(searchMfds, keyword, humanSearchQueries);
   let total = 0;
+  let fulfilledCount = 0;
 
   for (let i = 0; i < pages.length; i += 1) {
     const result = pages[i];
     if (result.status !== "fulfilled") continue;
+    fulfilledCount += 1;
     total = Math.max(total, Number(result.value.total || 0));
     const label = searches[i].label;
     for (const row of (result.value.items || []).slice(0, GROUP_LIMIT)) {
@@ -190,6 +219,9 @@ async function buildHumanGroup(keyword) {
       if (map.size >= GROUP_LIMIT) break;
     }
   }
+  if (!fulfilledCount) {
+    throw new Error("인체용 의약품 검색 연결이 지연되었습니다. 다시 검색해 주세요.");
+  }
 
   return {
     key: "human",
@@ -204,14 +236,17 @@ async function buildExternalGroup(kind, keyword) {
   const map = new Map();
   const { searches, pages } = await settledSearches(searchFn, keyword, externalSearchQueries);
   let total = 0;
+  let fulfilledCount = 0;
 
   for (let i = 0; i < pages.length; i += 1) {
     const result = pages[i];
     if (result.status !== "fulfilled") continue;
-    total = Math.max(total, Number(result.value.total || 0));
+    fulfilledCount += 1;
     const label = searches[i].label;
     const searchTerm = searches[i].searchTerm || keyword;
+    let acceptedCount = 0;
     for (const row of (result.value.items || []).slice(0, GROUP_LIMIT)) {
+      if (!isTrustedExternalRow(row, searchTerm)) continue;
       const key = row.detailKey || row.sourceUrl || `${row.permitNumber || ""}:${row.itemName}:${row.entpName}`;
       const matched = externalSnippet(row, searchTerm, label);
       const synonymPrefix = searchTerm !== keyword ? `${searchTerm} 기준 검색 결과 · ` : "";
@@ -227,8 +262,15 @@ async function buildExternalGroup(kind, keyword) {
         searchTerm,
         row
       });
+      acceptedCount += 1;
       if (map.size >= GROUP_LIMIT) break;
     }
+    if (acceptedCount) {
+      total = Math.max(total, label === "제품명" || label === "업체명" ? Number(result.value.total || acceptedCount) : map.size);
+    }
+  }
+  if (!fulfilledCount) {
+    throw new Error(`${kind === "aquatic" ? "수산동물용" : "동물용"} 의약품 검색 연결이 지연되었습니다. 다시 검색해 주세요.`);
   }
 
   return {
@@ -260,7 +302,7 @@ async function globalSearch(query = {}) {
     return { keyword: "", groups: [] };
   }
 
-  const cacheKey = keyword.toLowerCase();
+  const cacheKey = `${keyword.toLowerCase()}:${compactText(valueOf(query._v || query.version || ""))}`;
   const cached = getCached(globalMemoryCache, cacheKey, GLOBAL_CACHE_TTL_MS);
   if (cached) return { ...cached, cache: "memory" };
 

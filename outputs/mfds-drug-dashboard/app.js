@@ -52,7 +52,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "search-optimized-20260615-2";
+const API_VERSION = "search-quality-20260615-2";
 const HOME_PREVIEW_LIMIT = 3;
 let compareSlotSeed = 0;
 const compareState = {
@@ -841,6 +841,9 @@ function resetHumanSearchFilters() {
 }
 
 function preferredHomeMatchLabel(group, fallback = "제품명") {
+  if (/발열|고열|열감|통증|동통|기침|해수|가래|담|설사|구토|염증|감염|해열|진통|진해|거담/.test(homeSearchState.keyword.replace(/\s+/g, ""))) {
+    return "효능효과";
+  }
   const counts = new Map();
   for (const item of group?.items || []) {
     const labels = [...(item.matchFields || []), item.matchLabel].filter(Boolean);
@@ -1015,8 +1018,11 @@ async function openChanges(category) {
     if (!response.ok) throw new Error(`변동사항 요청 실패 (${response.status})`);
     const payload = await response.json();
     changesTitle.textContent = `${payload.label || "의약품"} 변동사항`;
-    changesMeta.textContent = payload.updatedAt ? `마지막 갱신: ${payload.updatedAt}` : "아직 갱신된 스냅샷이 없습니다.";
+    changesMeta.textContent = payload.range
+      ? `최근 조회 기준: ${payload.range.start} ~ ${payload.range.end}${payload.updatedAt ? ` · 마지막 갱신: ${payload.updatedAt}` : ""}`
+      : payload.updatedAt ? `마지막 갱신: ${payload.updatedAt}` : "아직 갱신된 스냅샷이 없습니다.";
     changesContent.innerHTML = `
+      ${payload.liveError ? `<p class="changes-loading error">${escapeHtml(payload.liveError)}</p>` : ""}
       ${renderChangeItems("신규 등록된 의약품", payload.added || [])}
       ${renderChangeItems("취하·만료된 의약품", payload.removed || [])}
     `;
