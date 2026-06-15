@@ -1733,3 +1733,61 @@ body.table-only .detail-panel {
   font-weight: 700;
   color: #2d3748;
 }
+
+/* ── CSV Dropdown Styles ── */
+.csv-dropdown-container {
+  position: relative;
+  display: inline-block;
+}
+
+.csv-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(20, 42, 52, 0.15);
+  min-width: 170px;
+  overflow: hidden;
+}
+
+.csv-dropdown-menu[hidden] {
+  display: none !important;
+}
+
+.csv-dropdown-menu button {
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+
+.csv-dropdown-menu button:hover {
+  background: var(--surface-muted);
+}
+
+.csv-button {
+  min-width: 52px;
+  padding: 0 10px;
+  height: 36px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--green);
+  color: #fff;
+  font-weight: 900;
+}
+
+.csv-button:hover {
+  background: #276f47;
+}

@@ -1787,92 +1787,77 @@ function toCsvValue(value) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-async function downloadCsv() {
-  csvButton.disabled = true;
-  csvButton.textContent = "⏳";
+function downloadCsvClientSide(category = "human") {
+  let headers = [];
+  const lines = [];
+  let filename = "";
 
-  try {
-    const query = Object.fromEntries(new FormData(form).entries());
-    Object.assign(query, state.filters);
-    // Remove empty values
-    for (const key of Object.keys(query)) {
-      if (!query[key]) delete query[key];
-    }
-
-    // Pass client-side detail cache to avoid re-fetching
-    const cache = {};
-    for (const [seq, detail] of Object.entries(state.detailCache)) {
-      if (detail && (detail.contractManufacturer || detail.performance)) {
-        cache[seq] = {
-          contractManufacturer: detail.contractManufacturer || "",
-          atcCode: detail.atcCode || "",
-          standardCode: detail.standardCode || "",
-          unitDose: detail.unitDose || "",
-          mainIngredient: detail.mainIngredient || "",
-          performance: detail.performance || null
-        };
-      }
-    }
-
-    const response = await fetch("/api/csv", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, cache })
+  if (category === "vet") {
+    headers = ["순번", "제품명", "제품영문명", "업체명", "품목코드", "허가번호", "품목구분", "허가일", "비고"];
+    lines.push(headers.map((h) => toCsvValue(h)).join(","));
+    externalStates.vet.rows.forEach((row, index) => {
+      const rowData = [
+        String(index + 1),
+        row.itemName,
+        row.itemEngName,
+        row.entpName,
+        row.productCode,
+        row.permitNumber,
+        row.itemCategory,
+        row.permitDate,
+        row.note
+      ].map(toCsvValue);
+      lines.push(rowData.join(","));
     });
-
-    if (!response.ok) {
-      throw new Error(`CSV 생성 실패 (${response.status})`);
-    }
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `mfds-drugs-all-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    console.warn("Server CSV failed, falling back to client-side:", error.message);
-    // Fallback: client-side CSV for current page only
-    downloadCsvClientSide();
-  } finally {
-    csvButton.disabled = false;
-    csvButton.textContent = "CSV";
-  }
-}
-
-function downloadCsvClientSide() {
-  const perfYears = getPerformanceYears();
-  const headers = [
-    ["rowNumber", "순번"],
-    ["itemSeq", "품목기준코드"],
-    ["itemName", "제품명"],
-    ["itemEngName", "제품영문명"],
-    ["entpName", "업체명"],
-    ["entpEngName", "업체영문명"],
-    ["contractManufacturer", "위탁제조업체"],
-    ["mainIngredient", "주성분"],
-    ["unitDose", "단위용량"],
-    ["etcOtc", "전문/일반"],
-    ["permitDate", "허가일"],
-    ["itemCategory", "품목구분"],
-    ["cancelStatus", "취소/취하"],
-    ["makeMaterial", "완제/원료"],
-    ["mainIngredientEng", "주성분영문명"],
-    ["additives", "첨가제"],
-    ["standardCode", "표준코드"],
-    ["atcCode", "ATC코드"]
-  ];
-
-  perfYears.forEach((year) => {
-    headers.push([`perf_${year}`, `${year}년 실적`]);
-  });
-
-  const lines = [
-    headers.map(([, label]) => toCsvValue(label)).join(","),
-    ...state.rows.map((row) => {
+    filename = `vet-drugs-page-${externalStates.vet.page}-${new Date().toISOString().slice(0, 10)}.csv`;
+  } else if (category === "aquatic") {
+    headers = ["허가번호", "제품명", "업체명", "제형", "투여경로", "최초허가일", "최종허가일", "허가조건", "비고"];
+    lines.push(headers.map((h) => toCsvValue(h)).join(","));
+    externalStates.aquatic.rows.forEach((row) => {
+      const rowData = [
+        row.permitNumber,
+        row.itemName,
+        row.entpName,
+        row.dosageForm,
+        row.route,
+        row.firstPermitDate,
+        row.permitDate,
+        row.condition,
+        row.note
+      ].map(toCsvValue);
+      lines.push(rowData.join(","));
+    });
+    filename = `aquatic-drugs-page-${externalStates.aquatic.page}-${new Date().toISOString().slice(0, 10)}.csv`;
+  } else {
+    const perfYears = getPerformanceYears();
+    headers = [
+      ["rowNumber", "순번"],
+      ["itemSeq", "품목기준코드"],
+      ["itemName", "제품명"],
+      ["itemEngName", "제품영문명"],
+      ["entpName", "업체명"],
+      ["entpEngName", "업체영문명"],
+      ["contractManufacturer", "위탁제조업체"],
+      ["mainIngredient", "주성분"],
+      ["unitDose", "단위용량"],
+      ["etcOtc", "전문/일반"],
+      ["permitDate", "허가일"],
+      ["itemCategory", "품목구분"],
+      ["cancelStatus", "취소/취하"],
+      ["makeMaterial", "완제/원료"],
+      ["mainIngredientEng", "주성분영문명"],
+      ["additives", "첨가제"],
+      ["standardCode", "표준코드"],
+      ["atcCode", "ATC코드"]
+    ];
+    perfYears.forEach((year) => {
+      headers.push([`perf_${year}`, `${year}년 실적`]);
+    });
+    
+    lines.push(headers.map(([, label]) => toCsvValue(label)).join(","));
+    state.rows.forEach((row, index) => {
       const drug = rowWithCachedDetail(row);
-      return headers.map(([key]) => {
+      const rowData = headers.map(([key]) => {
         if (key.startsWith("perf_")) {
           const year = Number(key.split("_")[1]);
           const perf = drug.performance;
@@ -1885,16 +1870,105 @@ function downloadCsvClientSide() {
           return toCsvValue(`${perf.type}: ${symbol}${r.amount}${suffix}`);
         }
         return toCsvValue(drug[key]);
-      }).join(",");
-    })
-  ];
+      });
+      lines.push(rowData.join(","));
+    });
+    filename = `human-drugs-page-${state.page}-${new Date().toISOString().slice(0, 10)}.csv`;
+  }
+
   const blob = new Blob(["\ufeff", lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `mfds-drugs-page-${state.page}-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+async function downloadCsvServerSide(category = "human") {
+  const statusEl = document.querySelector("#statusText");
+  const originalStatus = statusEl?.textContent || "";
+  if (statusEl) statusEl.textContent = "CSV 데이터를 추출하여 다운로드하는 중...";
+
+  try {
+    let query, cache = {};
+    if (category === "vet") {
+      const dashboard = externalDashboard("vet");
+      query = Object.fromEntries(buildExternalParams(dashboard).entries());
+    } else if (category === "aquatic") {
+      const dashboard = externalDashboard("aquatic");
+      query = Object.fromEntries(buildExternalParams(dashboard).entries());
+    } else {
+      query = Object.fromEntries(buildSearchParams().entries());
+      for (const [seq, detail] of Object.entries(state.detailCache)) {
+        if (detail && (detail.contractManufacturer || detail.performance)) {
+          cache[seq] = {
+            contractManufacturer: detail.contractManufacturer || "",
+            atcCode: detail.atcCode || "",
+            standardCode: detail.standardCode || "",
+            unitDose: detail.unitDose || "",
+            mainIngredient: detail.mainIngredient || "",
+            performance: detail.performance || null
+          };
+        }
+      }
+    }
+
+    const response = await fetch("/api/csv", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, cache, category })
+    });
+
+    if (!response.ok) {
+      throw new Error(`CSV 생성 실패 (${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${category}-drugs-all-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.warn("Server CSV failed, falling back to client-side:", error.message);
+    alert("전체 결과 CSV 생성을 완료하지 못해 현재 페이지만 다운로드합니다.");
+    downloadCsvClientSide(category);
+  } finally {
+    if (statusEl) statusEl.textContent = originalStatus;
+  }
+}
+
+function setupCsvDropdown(buttonId, menuId, category) {
+  const button = document.querySelector(buttonId);
+  const menu = document.querySelector(menuId);
+  if (!button || !menu) return;
+
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    document.querySelectorAll(".csv-dropdown-menu").forEach((el) => {
+      if (el !== menu) el.setAttribute("hidden", "");
+    });
+    const hidden = menu.hasAttribute("hidden");
+    if (hidden) {
+      menu.removeAttribute("hidden");
+    } else {
+      menu.setAttribute("hidden", "");
+    }
+  });
+
+  menu.addEventListener("click", (event) => {
+    const optButton = event.target.closest("[data-csv-opt]");
+    if (!optButton) return;
+    const opt = optButton.dataset.csvOpt;
+    if (opt === "current") {
+      downloadCsvClientSide(category);
+    } else if (opt === "all") {
+      downloadCsvServerSide(category);
+    }
+    menu.setAttribute("hidden", "");
+  });
 }
 
 form.addEventListener("submit", (event) => {
@@ -2299,7 +2373,9 @@ pageInput.addEventListener("keydown", (event) => {
   }
 });
 
-csvButton.addEventListener("click", downloadCsv);
+setupCsvDropdown("#csvButton", "#csvDropdown", "human");
+setupCsvDropdown("#vetCsvButton", "#vetCsvDropdown", "vet");
+setupCsvDropdown("#aquaticCsvButton", "#aquaticCsvDropdown", "aquatic");
 
 /* ── Collapsible extra ingredients toggle ── */
 
