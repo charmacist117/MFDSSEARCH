@@ -2,9 +2,13 @@ const { fetchMfdsText } = require("./mfds");
 
 const VET_BASE_URL = "https://medi.qia.go.kr/searchMedicine";
 const AQUATIC_BASE_URL = "https://www.nfqs.go.kr/apms/search/goodsList.ad";
+const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const DETAIL_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const SEARCH_CACHE_LIMIT = 80;
 const DETAIL_CACHE_LIMIT = 300;
+const searchMemoryCache = new Map();
 const detailMemoryCache = new Map();
+const CACHE_KEY_IGNORE_FIELDS = new Set(["_v", "_global", "timeoutMs", "retries", "fastFail"]);
 
 function valueOf(value) {
   if (Array.isArray(value)) return value[0] || "";
@@ -124,6 +128,16 @@ function cacheSet(cache, key, value, limit) {
   return value;
 }
 
+function buildQueryCacheKey(kind, query = {}, page = 1) {
+  const normalized = { kind, page: String(page) };
+  for (const key of Object.keys(query).sort()) {
+    if (CACHE_KEY_IGNORE_FIELDS.has(key)) continue;
+    const value = valueOf(query[key]);
+    if (value) normalized[key] = value;
+  }
+  return JSON.stringify(normalized);
+}
+
 function resolvePublicUrl(candidate, sourceUrl) {
   const raw = decodeEntities(candidate || "").trim();
   if (!raw || raw === "#" || /^javascript:/i.test(raw)) return "";
@@ -186,6 +200,10 @@ function ingredientValues(query = {}) {
 
 function buildVetUrl(query = {}) {
   const ingredients = ingredientValues(query);
+  const efficacyQuery = valueOf(query.efficacyQuery);
+  const dosageQuery = valueOf(query.dosageQuery);
+  const precautionQuery = valueOf(query.precautionQuery);
+  const documentKeyword = efficacyQuery || dosageQuery || precautionQuery;
   const params = new URLSearchParams({
     csSignature: "/pty5cD24mE8YS6L+3jPAw==",
     sort: "",
@@ -206,9 +224,22 @@ function buildVetUrl(query = {}) {
     ingrName3: ingredients[2] || "",
     ingrName4: ingredients[3] || "",
     ingrName5: ingredients[4] || "",
-    eeDocData: valueOf(query.efficacyQuery),
-    udDocData: valueOf(query.dosageQuery),
-    nbDocData: valueOf(query.precautionQuery),
+    eeDocData: efficacyQuery,
+    effectDocData: efficacyQuery,
+    effect: efficacyQuery,
+    efficacy: efficacyQuery,
+    efcyQesitm: efficacyQuery,
+    udDocData: dosageQuery,
+    usageDocData: dosageQuery,
+    usage: dosageQuery,
+    dosage: dosageQuery,
+    nbDocData: precautionQuery,
+    cautionDocData: precautionQuery,
+    caution: precautionQuery,
+    precaution: precautionQuery,
+    searchKeyword: documentKeyword,
+    searchWord: documentKeyword,
+    keyword: documentKeyword,
     searchConEe: valueOf(query.efficacyOperator) || "AND",
     searchConUd: valueOf(query.dosageOperator) || "AND",
     searchConNb: valueOf(query.precautionOperator) || "AND"
@@ -253,6 +284,9 @@ function parseVetHtml(html, sourceUrl) {
 function buildAquaticUrl(query = {}) {
   const ingredients = ingredientValues(query);
   const ingredientQuery = ingredients.join(" ");
+  const efficacyQuery = valueOf(query.efficacyQuery);
+  const dosageQuery = valueOf(query.dosageQuery);
+  const documentKeyword = efficacyQuery || dosageQuery;
   const params = new URLSearchParams({
     pageNo: valueOf(query.page) || "1",
     prdlstNm: valueOf(query.productName),
@@ -265,10 +299,14 @@ function buildAquaticUrl(query = {}) {
     ingrNm3: ingredients[2] || "",
     ingrNm4: ingredients[3] || "",
     ingrNm5: ingredients[4] || "",
-    effect: valueOf(query.efficacyQuery),
-    efficacy: valueOf(query.efficacyQuery),
-    usage: valueOf(query.dosageQuery),
-    dosage: valueOf(query.dosageQuery),
+    effect: efficacyQuery,
+    efficacy: efficacyQuery,
+    efcyQesitm: efficacyQuery,
+    usage: dosageQuery,
+    dosage: dosageQuery,
+    searchKeyword: documentKeyword,
+    searchWord: documentKeyword,
+    keyword: documentKeyword,
     searchConEe: valueOf(query.efficacyOperator) || "AND",
     searchConUd: valueOf(query.dosageOperator) || "AND",
     fishNm: valueOf(query.fishName),
@@ -458,27 +496,37 @@ function parseGenericDetailHtml(html, sourceUrl) {
 
 async function searchVetMedicines(query = {}) {
   const page = Math.max(Number(valueOf(query.page) || 1), 1);
+  const cacheKey = buildQueryCacheKey("vet", query, page);
+  const cachedValue = cached(searchMemoryCache, cacheKey, SEARCH_CACHE_TTL_MS);
+  if (cachedValue) return cachedValue;
+
   const sourceUrl = buildVetUrl({ ...query, page });
   const retries = Number(valueOf(query.retries) || 2);
   const timeoutMs = Number(valueOf(query.timeoutMs) || 15000);
-  const { text, url } = await fetchMfdsText(sourceUrl, retries, timeoutMs);
+  const fastFail = valueOf(query.fastFail) === "1";
+  const { text, url } = await fetchMfdsText(sourceUrl, retries, timeoutMs, { fallbackOnFetchError: !fastFail });
   const parsed = parseVetHtml(text, url || sourceUrl);
-  return pagePayload({ page, ...parsed, sourceUrl: url || sourceUrl });
+  return cacheSet(searchMemoryCache, cacheKey, pagePayload({ page, ...parsed, sourceUrl: url || sourceUrl }), SEARCH_CACHE_LIMIT);
 }
 
 async function searchAquaticMedicines(query = {}) {
   const page = Math.max(Number(valueOf(query.page) || 1), 1);
+  const cacheKey = buildQueryCacheKey("aquatic", query, page);
+  const cachedValue = cached(searchMemoryCache, cacheKey, SEARCH_CACHE_TTL_MS);
+  if (cachedValue) return cachedValue;
+
   const sourceUrl = buildAquaticUrl({ ...query, page });
   const retries = Number(valueOf(query.retries) || 2);
   const timeoutMs = Number(valueOf(query.timeoutMs) || 15000);
-  const { text, url } = await fetchMfdsText(sourceUrl, retries, timeoutMs);
+  const fastFail = valueOf(query.fastFail) === "1";
+  const { text, url } = await fetchMfdsText(sourceUrl, retries, timeoutMs, { fallbackOnFetchError: !fastFail });
   const parsed = parseAquaticHtml(text, url || sourceUrl, query);
-  return pagePayload({
+  return cacheSet(searchMemoryCache, cacheKey, pagePayload({
     page,
     ...parsed,
     sourceUrl: url || sourceUrl,
     notice: "수산동물용 의약품은 국립수산물품질관리원 약품편람 목록을 기준으로 표시합니다."
-  });
+  }), SEARCH_CACHE_LIMIT);
 }
 
 async function getPublicMedicineDetail({ kind, sourceUrl } = {}) {

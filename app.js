@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "global-search-contract-20260615-1";
+const API_VERSION = "search-optimized-20260615-1";
 const HOME_PREVIEW_LIMIT = 3;
 let compareSlotSeed = 0;
 const compareState = {
@@ -870,6 +870,14 @@ function preferredHomeMatchLabel(group, fallback = "제품명") {
   })[0][0];
 }
 
+function preferredHomeSearchTerm(group, label) {
+  const item = (group?.items || []).find((result) => {
+    const labels = [...(result.matchFields || []), result.matchLabel].filter(Boolean);
+    return labels.includes(label) && result.searchTerm;
+  });
+  return item?.searchTerm || homeSearchState.keyword;
+}
+
 function applyHomeKeywordToForm(formEl, label, keyword) {
   clearSearchFormFields(formEl);
   if (!formEl?.elements) return;
@@ -917,7 +925,7 @@ function openHomeExternalResult(category, result) {
   const extState = dashboard.state;
   extState.loaded = true;
   setCategoryTab(category);
-  applyHomeKeywordToForm(dashboard.form, result.matchLabel || preferredHomeMatchLabel(group), homeSearchState.keyword);
+  applyHomeKeywordToForm(dashboard.form, result.matchLabel || preferredHomeMatchLabel(group), result.searchTerm || homeSearchState.keyword);
   extState.rows = rows;
   extState.total = rows.length;
   extState.page = 1;
@@ -943,13 +951,14 @@ function openHomeCategoryResults(category) {
   const group = homeSearchState.groups.find((item) => item.key === category);
   if (!group || !homeSearchState.keyword) return;
   const label = preferredHomeMatchLabel(group);
+  const searchTerm = preferredHomeSearchTerm(group, label);
   activeSearchKeyword = homeSearchState.keyword;
 
   if (category === "human") {
     setCategoryTab("human");
     setWorkspaceTab("search");
     resetHumanSearchFilters();
-    applyHomeKeywordToForm(form, label, homeSearchState.keyword);
+    applyHomeKeywordToForm(form, label, searchTerm);
     loadResults({ resetPage: true });
     return;
   }
@@ -957,7 +966,7 @@ function openHomeCategoryResults(category) {
   const dashboard = externalDashboard(category);
   dashboard.state.loaded = true;
   dashboard.state.page = 1;
-  applyHomeKeywordToForm(dashboard.form, label, homeSearchState.keyword);
+  applyHomeKeywordToForm(dashboard.form, label, searchTerm);
   setCategoryTab(category);
   loadExternalResults(category, { resetPage: true });
 }
