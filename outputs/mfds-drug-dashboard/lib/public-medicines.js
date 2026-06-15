@@ -280,8 +280,13 @@ function parseVetHtml(html, sourceUrl, query = {}) {
         itemName: cells[1] || "",
         itemEngName: cells[2] || "",
         entpName: cells[3] || "",
+        productCode: cells[4] || "",
+        permitNumber: cells[5] || "",
         itemCategory: cells.length >= 8 ? (cells[7] || "") : "",
         permitDate: cells.length >= 7 ? (cells[6] || "") : "",
+        approvalKind: cells[10] || "",
+        manufactureImport: cells[11] || "",
+        importCountry: cells[12] || "",
         note: cells.length >= 13 ? [
           cells[4] ? `품목코드: ${cells[4]}` : "",
           cells[5] ? `허가번호: ${cells[5]}` : "",

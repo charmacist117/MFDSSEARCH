@@ -12,6 +12,7 @@ const dataDir = process.env.CHANGELOG_DATA_DIR || path.join(root, "data");
 const snapshotDir = path.join(dataDir, "snapshots");
 const changeLogFile = path.join(dataDir, "change-log.json");
 const categories = ["human", "vet", "aquatic"];
+const defaultCategories = ["human", "vet"];
 
 function parseArgs(argv) {
   const args = {};
@@ -41,6 +42,15 @@ function todayKst() {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
+function compactDate(value) {
+  const match = String(value || "").match(/\d{4}[-.]\d{2}[-.]\d{2}/);
+  return match ? match[0].replaceAll(".", "-") : "";
+}
+
+function isRemovedStatus(status) {
+  return /취하|만료|취소|폐지/i.test(status || "");
+}
+
 function normalize(category, item) {
   if (category === "human") {
     return {
@@ -53,12 +63,16 @@ function normalize(category, item) {
     };
   }
   if (category === "vet") {
+    const permitNumber = item.permitNumber || (String(item.note || "").match(/허가번호:\s*([^/]+)/) || [])[1]?.trim() || "";
+    const productCode = item.productCode || (String(item.note || "").match(/품목코드:\s*([^/]+)/) || [])[1]?.trim() || "";
     return {
-      id: item.detailKey || item.sourceUrl || `${item.itemName}:${item.entpName}:${item.permitDate}`,
+      id: permitNumber || productCode || item.sourceUrl || `${item.itemName}:${item.entpName}:${item.permitDate}`,
       name: item.itemName || "",
       company: item.entpName || "",
       status: item.note || "",
       permitDate: item.permitDate || "",
+      permitNumber,
+      productCode,
       raw: item
     };
   }
@@ -112,6 +126,21 @@ async function collectCategory(category, { maxPages = 0, concurrency = 4 } = {})
   return Array.from(unique.values()).sort((a, b) => a.id.localeCompare(b.id));
 }
 
+async function collectSearchPages(search, query, { maxPages = 12, concurrency = 4 } = {}) {
+  const first = await search({ ...query, page: 1 });
+  const totalPages = Math.min(first.totalPages || 1, maxPages || first.totalPages || 1);
+  const pageNumbers = Array.from({ length: Math.max(totalPages - 1, 0) }, (_, index) => index + 2);
+  const pages = await mapConcurrent(pageNumbers, concurrency, async (page) => {
+    try {
+      return await search({ ...query, page });
+    } catch (error) {
+      console.warn(`[recent] page ${page} skipped: ${error.message}`);
+      return { items: [] };
+    }
+  });
+  return [...(first.items || []), ...pages.flatMap((page) => page.items || [])];
+}
+
 async function readJson(file, fallback) {
   try {
     return JSON.parse(await fs.readFile(file, "utf8"));
@@ -135,6 +164,8 @@ function entry(date, category, type, item, note = "") {
     company: item.company,
     status: item.status,
     permitDate: item.permitDate,
+    permitNumber: item.permitNumber || "",
+    productCode: item.productCode || "",
     note
   };
 }
@@ -145,18 +176,58 @@ function compareSnapshots(date, category, previous, current) {
   const added = current.filter((item) => !previousMap.has(item.id)).map((item) => entry(date, category, "added", item));
   const removed = previous.filter((item) => !currentMap.has(item.id)).map((item) => entry(date, category, "removed", item, "전일 스냅샷에는 있었으나 금일 목록에서 확인되지 않음"));
   const canceled = current
-    .filter((item) => /취하|만료|취소|폐지/i.test(item.status || "") && !/취하|만료|취소|폐지/i.test(previousMap.get(item.id)?.status || ""))
+    .filter((item) => isRemovedStatus(item.status) && !isRemovedStatus(previousMap.get(item.id)?.status))
     .map((item) => entry(date, category, "removed", item, "상태가 취하·만료 계열로 변경됨"));
   return [...added, ...removed, ...canceled];
 }
 
+async function collectDateBasedChanges(date, category, { maxPages = 20, concurrency = 4 } = {}) {
+  if (category === "human") {
+    const addedRows = await collectSearchPages(searchMfds, { permitStart: date, permitEnd: date }, { maxPages, concurrency });
+    const added = addedRows
+      .map((item) => normalize("human", item))
+      .filter((item) => compactDate(item.permitDate) === date)
+      .map((item) => entry(date, "human", "added", item, "허가일 기준 당일 신규 등록"));
+
+    const removedRows = [
+      ...(await collectSearchPages(searchMfds, { cancelStatus: "A" }, { maxPages, concurrency })),
+      ...(await collectSearchPages(searchMfds, { cancelStatus: "2" }, { maxPages, concurrency }))
+    ];
+    const removed = removedRows
+      .map((item) => normalize("human", item))
+      .filter((item) => compactDate(item.raw?.cancelDate) === date || (isRemovedStatus(item.status) && compactDate(item.permitDate) === date))
+      .map((item) => entry(date, "human", "removed", item, "취소/취하일자 기준 당일 변동"));
+
+    return [...added, ...removed];
+  }
+
+  if (category === "vet") {
+    const addedRows = await collectSearchPages(searchVetMedicines, { permitStart: date, permitEnd: date }, { maxPages, concurrency });
+    return addedRows
+      .map((item) => normalize("vet", item))
+      .filter((item) => compactDate(item.permitDate) === date)
+      .map((item) => entry(date, "vet", "added", item, "허가일 기준 당일 신규 등록"));
+  }
+
+  return [];
+}
+
+function changeKey(item) {
+  return `${item.date}:${item.type}:${item.id}`;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const targetCategories = args.category ? args.category.split(",").map((item) => item.trim()).filter(Boolean) : categories;
+  const targetCategories = args.category
+    ? (args.category === "all" ? categories : args.category.split(",").map((item) => item.trim()).filter(Boolean))
+    : defaultCategories;
   const date = args.date || todayKst();
   const maxPages = Number(args.maxPages || process.env.CHANGELOG_MAX_PAGES || 0);
+  const recentMaxPages = Number(args.recentMaxPages || process.env.CHANGELOG_RECENT_MAX_PAGES || 80);
   const concurrency = Number(args.concurrency || process.env.CHANGELOG_CONCURRENCY || 4);
-  const log = await readJson(changeLogFile, { updatedAt: "", changes: { human: [], vet: [], aquatic: [] } });
+  const log = await readJson(changeLogFile, { updatedAt: "", snapshotDate: "", snapshots: {}, changes: { human: [], vet: [], aquatic: [] } });
+  log.changes = { human: [], vet: [], aquatic: [], ...(log.changes || {}) };
+  log.snapshots = { ...(log.snapshots || {}) };
 
   for (const category of targetCategories) {
     if (!categories.includes(category)) continue;
@@ -164,15 +235,31 @@ async function main() {
     const snapshotFile = path.join(snapshotDir, `${category}.json`);
     const previous = await readJson(snapshotFile, { date: "", items: [] });
     const currentItems = await collectCategory(category, { maxPages, concurrency });
-    const changes = previous.items?.length ? compareSnapshots(date, category, previous.items, currentItems) : [];
-    const existingKeys = new Set((log.changes[category] || []).map((item) => `${item.date}:${item.type}:${item.id}:${item.note || ""}`));
-    const uniqueChanges = changes.filter((item) => !existingKeys.has(`${item.date}:${item.type}:${item.id}:${item.note || ""}`));
+    const snapshotChanges = previous.items?.length ? compareSnapshots(date, category, previous.items, currentItems) : [];
+    const dateChanges = await collectDateBasedChanges(date, category, { maxPages: recentMaxPages, concurrency });
+    const existingKeys = new Set((log.changes[category] || []).map(changeKey));
+    const seenKeys = new Set(existingKeys);
+    const uniqueChanges = [...snapshotChanges, ...dateChanges].filter((item) => {
+      const key = changeKey(item);
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
     log.changes[category] = [...(log.changes[category] || []), ...uniqueChanges];
-    await writeJson(snapshotFile, { date, updatedAt: new Date().toISOString(), items: currentItems });
+    const snapshotPayload = { date, updatedAt: new Date().toISOString(), category, count: currentItems.length, items: currentItems };
+    await writeJson(snapshotFile, snapshotPayload);
+    log.snapshots[category] = {
+      date,
+      updatedAt: snapshotPayload.updatedAt,
+      count: currentItems.length,
+      previousDate: previous.date || "",
+      changes: uniqueChanges.length
+    };
     console.log(`[${category}] items=${currentItems.length}, changes=${uniqueChanges.length}`);
   }
 
   log.updatedAt = new Date().toISOString();
+  log.snapshotDate = date;
   await writeJson(changeLogFile, log);
   console.log(`change log saved: ${changeLogFile}`);
 }

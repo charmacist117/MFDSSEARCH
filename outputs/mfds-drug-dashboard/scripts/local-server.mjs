@@ -115,7 +115,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/changes") {
-      sendJson(res, 200, await changesForCategory(url.searchParams.get("category") || "human"));
+      sendJson(res, 200, await changesForCategory(url.searchParams.get("category") || "human", {
+        live: url.searchParams.get("live") === "1",
+        days: url.searchParams.get("days")
+      }));
       return;
     }
 

@@ -52,7 +52,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "search-quality-20260615-2";
+const API_VERSION = "snapshot-changelog-20260615-2";
 const HOME_PREVIEW_LIMIT = 3;
 let compareSlotSeed = 0;
 const compareState = {
@@ -1018,9 +1018,17 @@ async function openChanges(category) {
     if (!response.ok) throw new Error(`변동사항 요청 실패 (${response.status})`);
     const payload = await response.json();
     changesTitle.textContent = `${payload.label || "의약품"} 변동사항`;
-    changesMeta.textContent = payload.range
-      ? `최근 조회 기준: ${payload.range.start} ~ ${payload.range.end}${payload.updatedAt ? ` · 마지막 갱신: ${payload.updatedAt}` : ""}`
-      : payload.updatedAt ? `마지막 갱신: ${payload.updatedAt}` : "아직 갱신된 스냅샷이 없습니다.";
+    const metaParts = [];
+    if (payload.snapshot?.date) {
+      metaParts.push(`자정 스냅샷: ${payload.snapshot.date} (${Number(payload.snapshot.count || 0).toLocaleString("ko-KR")}건)`);
+    }
+    if (payload.range) {
+      metaParts.push(`최근 조회: ${payload.range.start} ~ ${payload.range.end}`);
+    }
+    if (payload.updatedAt) {
+      metaParts.push(`마지막 갱신: ${payload.updatedAt}`);
+    }
+    changesMeta.textContent = metaParts.length ? metaParts.join(" · ") : "아직 기준 스냅샷이 없습니다. 다음 자정 갱신 이후 전일 대비 변동사항이 누적됩니다.";
     changesContent.innerHTML = `
       ${payload.liveError ? `<p class="changes-loading error">${escapeHtml(payload.liveError)}</p>` : ""}
       ${renderChangeItems("신규 등록된 의약품", payload.added || [])}
