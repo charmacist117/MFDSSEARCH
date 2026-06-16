@@ -9,6 +9,7 @@ const state = {
   detailLoadingSeq: "",
   unitDoseLoading: false,
   listLoading: false,
+  loaded: false,
   error: "",
   notice: "",
   filters: {
@@ -52,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "contract-search-20260616-1";
+const API_VERSION = "human-autoload-20260616-2";
 const HOME_PREVIEW_LIMIT = 3;
 let compareSlotSeed = 0;
 const compareState = {
@@ -910,7 +911,7 @@ function applyHomeKeywordToForm(formEl, label, keyword) {
 function openHomeHumanResult(result) {
   const group = homeSearchState.groups.find((item) => item.key === "human");
   const rows = (group?.items || []).map((item, index) => ({ ...item.row, rowNumber: String(index + 1) }));
-  setCategoryTab("human");
+  setCategoryTab("human", { autoLoad: false });
   setWorkspaceTab("search");
   resetHumanSearchFilters();
   applyHomeKeywordToForm(form, result.matchLabel || preferredHomeMatchLabel(group), homeSearchState.keyword);
@@ -966,7 +967,7 @@ function openHomeCategoryResults(category) {
   activeSearchKeyword = homeSearchState.keyword;
 
   if (category === "human") {
-    setCategoryTab("human");
+    setCategoryTab("human", { autoLoad: false });
     setWorkspaceTab("search");
     resetHumanSearchFilters();
     applyHomeKeywordToForm(form, label, searchTerm);
@@ -1315,6 +1316,7 @@ async function loadResults({ resetPage = false } = {}) {
     state.pageSize = Number(payload.pageSize || state.rows.length || 10);
     state.totalPages = Math.max(Number(payload.totalPages || 1), 1);
     state.selectedSeq = state.rows[0]?.itemSeq || "";
+    state.loaded = true;
     state.listLoading = false;
     state.unitDoseLoading = false;
     render();
@@ -2310,13 +2312,25 @@ function setWorkspaceTab(tabName) {
     ensureCompareSlot();
     renderCompareSlots();
   }
+  if (tabName === "search") {
+    maybeAutoLoadHumanResults();
+  }
 }
 
 function currentHumanTab() {
   return document.querySelector("[data-workspace-tab].active")?.dataset.workspaceTab || "search";
 }
 
-function setCategoryTab(categoryName) {
+function maybeAutoLoadHumanResults({ force = false } = {}) {
+  const humanTabActive = document.querySelector('[data-category-tab="human"]')?.classList.contains("active");
+  const searchVisible = searchWorkspace && !searchWorkspace.hidden;
+  if (!humanTabActive || !searchVisible || state.listLoading) return;
+  const emptyStaleState = state.loaded && state.total === 0 && !state.rows.length && !state.error;
+  if (!force && state.loaded && !emptyStaleState) return;
+  loadResults({ resetPage: true });
+}
+
+function setCategoryTab(categoryName, { autoLoad = true } = {}) {
   closeChanges();
   if (homeWorkspace) homeWorkspace.hidden = true;
   homeButton?.classList.remove("active");
@@ -2333,6 +2347,7 @@ function setCategoryTab(categoryName) {
 
   if (isHuman) {
     setWorkspaceTab(currentHumanTab());
+    if (autoLoad) maybeAutoLoadHumanResults();
     return;
   }
 
