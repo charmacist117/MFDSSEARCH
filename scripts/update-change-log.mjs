@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { searchMfds } = require("../lib/mfds.js");
+const { searchMfds, getMfdsDetail } = require("../lib/mfds.js");
 const { searchVetMedicines, searchAquaticMedicines } = require("../lib/public-medicines.js");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,13 +31,14 @@ function parseArgs(argv) {
   return args;
 }
 
-function todayKst() {
+function kstDate(offsetDays = 0) {
+  const target = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
-  }).formatToParts(new Date());
+  }).formatToParts(target);
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${map.year}-${map.month}-${map.day}`;
 }
@@ -51,6 +52,10 @@ function isRemovedStatus(status) {
   return /취하|만료|취소|폐지/i.test(status || "");
 }
 
+function removedChangeDate(item) {
+  return compactDate(item.cancelDate || item.raw?.cancelDate || item.raw?.detail?.cancelDate || "");
+}
+
 function normalize(category, item) {
   if (category === "human") {
     return {
@@ -59,6 +64,7 @@ function normalize(category, item) {
       company: item.entpName || "",
       status: item.cancelStatus || "",
       permitDate: item.permitDate || "",
+      cancelDate: item.cancelDate || "",
       raw: item
     };
   }
@@ -82,6 +88,7 @@ function normalize(category, item) {
     company: item.entpName || "",
     status: item.condition || item.note || "",
     permitDate: item.permitDate || "",
+    cancelDate: item.cancelDate || "",
     raw: item
   };
 }
@@ -141,6 +148,33 @@ async function collectSearchPages(search, query, { maxPages = 12, concurrency = 
   return [...(first.items || []), ...pages.flatMap((page) => page.items || [])];
 }
 
+async function hydrateHumanRemovalDetails(items, { maxDetails = 250, concurrency = 4 } = {}) {
+  const unique = new Map();
+  for (const item of items) {
+    if (item.id && !unique.has(item.id)) unique.set(item.id, item);
+  }
+  const targets = Array.from(unique.values()).slice(0, maxDetails);
+  return mapConcurrent(targets, concurrency, async (item) => {
+    try {
+      const detail = await getMfdsDetail(item.id, { retries: 1, timeoutMs: 9000 });
+      return {
+        ...item,
+        name: detail.itemName || item.name,
+        company: detail.entpName || item.company,
+        status: detail.cancelStatus || item.status,
+        permitDate: detail.permitDate || item.permitDate,
+        cancelDate: detail.cancelDate || item.cancelDate,
+        raw: {
+          ...(item.raw || {}),
+          detail
+        }
+      };
+    } catch {
+      return item;
+    }
+  });
+}
+
 async function readJson(file, fallback) {
   try {
     return JSON.parse(await fs.readFile(file, "utf8"));
@@ -164,6 +198,7 @@ function entry(date, category, type, item, note = "") {
     company: item.company,
     status: item.status,
     permitDate: item.permitDate,
+    cancelDate: item.cancelDate || "",
     permitNumber: item.permitNumber || "",
     productCode: item.productCode || "",
     note
@@ -177,25 +212,37 @@ function compareSnapshots(date, category, previous, current) {
   const removed = previous.filter((item) => !currentMap.has(item.id)).map((item) => entry(date, category, "removed", item, "전일 스냅샷에는 있었으나 금일 목록에서 확인되지 않음"));
   const canceled = current
     .filter((item) => isRemovedStatus(item.status) && !isRemovedStatus(previousMap.get(item.id)?.status))
-    .map((item) => entry(date, category, "removed", item, "상태가 취하·만료 계열로 변경됨"));
+    .map((item) => entry(removedChangeDate(item) || date, category, "removed", item, "상태가 취하·만료 계열로 변경됨"));
   return [...added, ...removed, ...canceled];
 }
 
-async function collectDateBasedChanges(date, category, { maxPages = 20, concurrency = 4 } = {}) {
+async function collectDateBasedChanges(date, category, { maxPages = 20, concurrency = 4, detailMax = 250 } = {}) {
   if (category === "human") {
-    const addedRows = await collectSearchPages(searchMfds, { permitStart: date, permitEnd: date }, { maxPages, concurrency });
+    const addedRows = await collectSearchPages(
+      searchMfds,
+      { permitStart: date, permitEnd: date, sort: "permitDate", sortOrder: "false" },
+      { maxPages, concurrency }
+    );
     const added = addedRows
       .map((item) => normalize("human", item))
       .filter((item) => compactDate(item.permitDate) === date)
       .map((item) => entry(date, "human", "added", item, "허가일 기준 당일 신규 등록"));
 
-    const removedRows = [
-      ...(await collectSearchPages(searchMfds, { cancelStatus: "A" }, { maxPages, concurrency })),
-      ...(await collectSearchPages(searchMfds, { cancelStatus: "2" }, { maxPages, concurrency }))
-    ];
-    const removed = removedRows
+    const removedRows = await mapConcurrent(["A", "2"], 2, async (cancelStatus) =>
+      collectSearchPages(
+        searchMfds,
+        { cancelStatus, sort: "cancelDate", sortOrder: "false" },
+        { maxPages, concurrency }
+      )
+    );
+    const normalizedRemoved = removedRows
+      .flat()
       .map((item) => normalize("human", item))
-      .filter((item) => compactDate(item.raw?.cancelDate) === date || (isRemovedStatus(item.status) && compactDate(item.permitDate) === date))
+      .filter((item) => isRemovedStatus(item.status));
+    const detailTargets = normalizedRemoved.filter((item) => !removedChangeDate(item) || removedChangeDate(item) >= date);
+    const detailedRemoved = await hydrateHumanRemovalDetails(detailTargets, { maxDetails: detailMax, concurrency });
+    const removed = detailedRemoved
+      .filter((item) => removedChangeDate(item) === date)
       .map((item) => entry(date, "human", "removed", item, "취소/취하일자 기준 당일 변동"));
 
     return [...added, ...removed];
@@ -221,9 +268,11 @@ async function main() {
   const targetCategories = args.category
     ? (args.category === "all" ? categories : args.category.split(",").map((item) => item.trim()).filter(Boolean))
     : defaultCategories;
-  const date = args.date || todayKst();
+  const date = args.date || kstDate(-1);
+  const snapshotDate = args.snapshotDate || kstDate(0);
   const maxPages = Number(args.maxPages || process.env.CHANGELOG_MAX_PAGES || 0);
   const recentMaxPages = Number(args.recentMaxPages || process.env.CHANGELOG_RECENT_MAX_PAGES || 80);
+  const detailMax = Number(args.detailMax || process.env.CHANGELOG_DETAIL_MAX || 250);
   const concurrency = Number(args.concurrency || process.env.CHANGELOG_CONCURRENCY || 4);
   const log = await readJson(changeLogFile, { updatedAt: "", snapshotDate: "", snapshots: {}, changes: { human: [], vet: [], aquatic: [] } });
   log.changes = { human: [], vet: [], aquatic: [], ...(log.changes || {}) };
@@ -236,7 +285,7 @@ async function main() {
     const previous = await readJson(snapshotFile, { date: "", items: [] });
     const currentItems = await collectCategory(category, { maxPages, concurrency });
     const snapshotChanges = previous.items?.length ? compareSnapshots(date, category, previous.items, currentItems) : [];
-    const dateChanges = await collectDateBasedChanges(date, category, { maxPages: recentMaxPages, concurrency });
+    const dateChanges = await collectDateBasedChanges(date, category, { maxPages: recentMaxPages, concurrency, detailMax });
     const existingKeys = new Set((log.changes[category] || []).map(changeKey));
     const seenKeys = new Set(existingKeys);
     const uniqueChanges = [...snapshotChanges, ...dateChanges].filter((item) => {
@@ -246,10 +295,11 @@ async function main() {
       return true;
     });
     log.changes[category] = [...(log.changes[category] || []), ...uniqueChanges];
-    const snapshotPayload = { date, updatedAt: new Date().toISOString(), category, count: currentItems.length, items: currentItems };
+    const snapshotPayload = { date: snapshotDate, changeDate: date, updatedAt: new Date().toISOString(), category, count: currentItems.length, items: currentItems };
     await writeJson(snapshotFile, snapshotPayload);
     log.snapshots[category] = {
-      date,
+      date: snapshotDate,
+      changeDate: date,
       updatedAt: snapshotPayload.updatedAt,
       count: currentItems.length,
       previousDate: previous.date || "",
@@ -259,7 +309,8 @@ async function main() {
   }
 
   log.updatedAt = new Date().toISOString();
-  log.snapshotDate = date;
+  log.snapshotDate = snapshotDate;
+  log.changeDate = date;
   await writeJson(changeLogFile, log);
   console.log(`change log saved: ${changeLogFile}`);
 }
