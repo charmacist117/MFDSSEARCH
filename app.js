@@ -52,7 +52,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "snapshot-changelog-20260615-2";
+const API_VERSION = "contract-search-20260616-1";
 const HOME_PREVIEW_LIMIT = 3;
 let compareSlotSeed = 0;
 const compareState = {
@@ -182,6 +182,16 @@ function formatPerformanceYearCell(performance, year) {
 function buildSearchParams() {
   const values = Object.fromEntries(new FormData(form).entries());
   const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page), _v: API_VERSION });
+  if (params.get("contractManufacturer")) {
+    params.set("timeoutMs", "6500");
+    params.set("retries", "1");
+    params.set("fastFail", "1");
+    params.set("contractCandidateLimit", "6");
+    params.set("contractBudgetMs", "8000");
+    params.set("detailTimeoutMs", "1800");
+    params.set("detailRetries", "1");
+    params.set("detailConcurrency", "4");
+  }
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
   }
@@ -252,6 +262,16 @@ function syncCompareQueryFromForm(slot, formEl) {
 
 function compactParams(values, filters, page) {
   const params = new URLSearchParams({ ...values, ...filters, page: String(page), _v: API_VERSION });
+  if (params.get("contractManufacturer")) {
+    params.set("timeoutMs", "6500");
+    params.set("retries", "1");
+    params.set("fastFail", "1");
+    params.set("contractCandidateLimit", "6");
+    params.set("contractBudgetMs", "8000");
+    params.set("detailTimeoutMs", "1800");
+    params.set("detailRetries", "1");
+    params.set("detailConcurrency", "4");
+  }
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
   }
@@ -1923,9 +1943,9 @@ async function downloadCsvAllResults(category = "human") {
     return;
   }
 
-  const maxItems = 300;
+  const maxItems = 1000;
   if (total > maxItems) {
-    const message = `검색 결과가 300건을 초과합니다 (${total.toLocaleString("ko-KR")}건).\n실시간 데이터 수집 제한으로 인해 처음 300건까지만 다운로드됩니다. 전체 데이터를 보시려면 상세 검색 조건(제품명, 업체명 등)을 입력하여 검색 결과를 300건 이하로 좁혀주세요.\n\n계속해서 처음 300건을 다운로드하시겠습니까?`;
+    const message = `검색 결과가 ${maxItems.toLocaleString("ko-KR")}건을 초과합니다 (${total.toLocaleString("ko-KR")}건).\n실시간 데이터 수집 및 속도 제한으로 인해 처음 ${maxItems.toLocaleString("ko-KR")}건까지만 다운로드됩니다. 전체 데이터를 보시려면 상세 검색 조건(제품명, 업체명 등)을 입력하여 검색 결과를 ${maxItems.toLocaleString("ko-KR")}건 이하로 좁혀주세요.\n\n계속해서 처음 ${maxItems.toLocaleString("ko-KR")}건을 다운로드하시겠습니까?`;
     if (!confirm(message)) {
       return;
     }

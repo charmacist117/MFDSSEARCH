@@ -3,6 +3,18 @@ const https = require("node:https");
 if (dns && dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder("ipv4first");
 }
+const {
+  valueOf,
+  delay,
+  isRetriableFetchError,
+  decodeEntities,
+  stripScripts,
+  textFromHtml,
+  normalizeText,
+  includesText,
+  mapConcurrent,
+  MemoryCache
+} = require("./utils");
 
 const BASE_URL = "https://nedrug.mfds.go.kr";
 const MFDS_FETCH_HEADERS = {
@@ -20,8 +32,8 @@ const DETAIL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const SEARCH_CACHE_LIMIT = 80;
 const DETAIL_CACHE_LIMIT = 500;
 const CONTRACT_SEARCH_NOTICE = "위탁제조업체는 허가자 업체명과 분리해 상세정보의 위탁제조업체 값으로만 필터링합니다.";
-const searchMemoryCache = new Map();
-const detailMemoryCache = new Map();
+const searchMemoryCache = new MemoryCache(SEARCH_CACHE_LIMIT, SEARCH_CACHE_TTL_MS);
+const detailMemoryCache = new MemoryCache(DETAIL_CACHE_LIMIT, DETAIL_CACHE_TTL_MS);
 const CACHE_KEY_IGNORE_FIELDS = new Set([
   "_v",
   "_global",
@@ -66,29 +78,6 @@ const DEFAULT_CRITERIA = {
   endPermitDate: ""
 };
 
-function valueOf(value) {
-  if (Array.isArray(value)) return value[0] || "";
-  return value == null ? "" : String(value);
-}
-
-function getCached(cache, key, ttlMs) {
-  const cached = cache.get(key);
-  if (!cached) return null;
-  if (Date.now() - cached.createdAt > ttlMs) {
-    cache.delete(key);
-    return null;
-  }
-  return cached.value;
-}
-
-function setCached(cache, key, value, limit) {
-  if (cache.size >= limit) {
-    cache.delete(cache.keys().next().value);
-  }
-  cache.set(key, { createdAt: Date.now(), value });
-  return value;
-}
-
 function buildQueryCacheKey(query = {}) {
   const normalized = { page: valueOf(query.page) || "1" };
   for (const key of Object.keys(query).sort()) {
@@ -131,17 +120,6 @@ function buildSearchCriteria(query = {}) {
 
 function buildSearchUrl(query = {}) {
   return `${BASE_URL}/searchDrug?${new URLSearchParams(buildSearchCriteria(query))}`;
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isRetriableFetchError(error) {
-  if (error?.status && error?.status >= 400 && error?.status < 500) {
-    return false; // Do not retry client errors (400, 401, 403, 404, etc.)
-  }
-  return true; // Retry all other errors (5xx server errors, network errors, timeouts, SSL errors)
 }
 
 function httpsTextRequest(url, timeoutMs = 15000, redirectCount = 0) {
@@ -234,41 +212,6 @@ async function fetchMfdsText(url, retries = 2, timeoutMs = 15000, options = {}) 
   throw lastError;
 }
 
-function decodeEntities(value) {
-  const named = {
-    amp: "&",
-    lt: "<",
-    gt: ">",
-    quot: '"',
-    apos: "'",
-    nbsp: " "
-  };
-  return String(value || "").replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (_, code) => {
-    const lower = code.toLowerCase();
-    if (named[lower]) return named[lower];
-    if (lower.startsWith("#x")) return String.fromCharCode(parseInt(lower.slice(2), 16));
-    if (lower.startsWith("#")) return String.fromCharCode(parseInt(lower.slice(1), 10));
-    return "";
-  });
-}
-
-function stripScripts(html) {
-  return String(html || "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<!--[\s\S]*?-->/g, "");
-}
-
-function textFromHtml(html) {
-  return decodeEntities(stripScripts(html)
-    .replace(/<(br|\/p|\/div|\/tr|\/li|\/h[1-6])\b[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/[ \t\r\f\v]+/g, " ")
-    .replace(/\n\s+/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim());
-}
-
 function sanitizeDocHtml(html) {
   const allowed = new Set([
     "br",
@@ -317,15 +260,6 @@ function cleanText(html) {
   return textFromHtml(html).replace(/\s+/g, " ").trim();
 }
 
-function normalizeText(value) {
-  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function includesText(source, query) {
-  const needle = normalizeText(query);
-  if (!needle) return true;
-  return normalizeText(source).includes(needle);
-}
 
 function stripDerivedSearchFields(query = {}) {
   const clean = { ...query };
@@ -361,19 +295,6 @@ function filterExtraIngredients(items, ingredient4, ingredient5) {
   });
 }
 
-async function mapConcurrent(items, concurrency, task) {
-  const results = [];
-  let index = 0;
-  async function worker() {
-    while (index < items.length) {
-      const current = index;
-      index += 1;
-      results[current] = await task(items[current], current);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
-  return results;
-}
 
 function stripMobileHeader(cellHtml) {
   return String(cellHtml || "").replace(/<span[^>]*class=["'][^"']*s-th[^"']*["'][^>]*>[\s\S]*?<\/span>/gi, "");
@@ -652,7 +573,11 @@ function parseDetailHtml(html, sourceUrl = "") {
     makeMaterial: "완제의약품",
     standardCode: basic["표준코드"] || "",
     reviewType: basic["허가심사유형"] || "",
-      mainIngredient: ingredients.map((item) => item.name).filter(Boolean).join("/"),
+      mainIngredient: ingredients.map((item) => {
+        const amt = String(item.amount || "").trim();
+        const ut = String(item.unit || "").trim();
+        return amt ? `${item.name}(${amt}${ut})` : item.name;
+      }).filter(Boolean).join("/"),
       mainIngredientEng: "",
       unitDose: parseUnitDose(ingredientSection, ingredients),
       ingredients,
@@ -685,8 +610,15 @@ async function fetchSearchPage(query, page) {
 }
 
 async function enrichContractCandidates(items, contractManufacturer, detailOptions = {}) {
-  const detailed = await mapConcurrent(items, 3, async (item) => {
-    const cachedDetail = getCached(detailMemoryCache, String(item.itemSeq), DETAIL_CACHE_TTL_MS);
+  const concurrency = Math.max(Number(detailOptions.concurrency || 4), 1);
+  const deadlineAt = Number(detailOptions.deadlineAt || 0);
+  let timedOut = false;
+  const detailed = await mapConcurrent(items, concurrency, async (item) => {
+    if (deadlineAt && Date.now() > deadlineAt) {
+      timedOut = true;
+      return item;
+    }
+    const cachedDetail = detailMemoryCache.get(String(item.itemSeq));
     if (cachedDetail) {
       return mergeListDetail(item, cachedDetail);
     }
@@ -697,40 +629,70 @@ async function enrichContractCandidates(items, contractManufacturer, detailOptio
       return item;
     }
   });
-  return detailed.filter((item) => contractSearchMatches(item, contractManufacturer));
+  return {
+    items: detailed.filter((item) => contractSearchMatches(item, contractManufacturer)),
+    timedOut
+  };
 }
 
 async function searchMfdsByContractManufacturer(query, page, cacheKey) {
   const contractManufacturer = valueOf(query.contractManufacturer);
   const ingredient4 = valueOf(query.ingredient4);
   const ingredient5 = valueOf(query.ingredient5);
-  const nativeQuery = stripDerivedSearchFields(query);
+  const searchStartedAt = Date.now();
+  const budgetMs = Math.max(Number(valueOf(query.contractBudgetMs) || 8000), 3500);
+  const nativeQuery = {
+    ...stripDerivedSearchFields(query),
+    timeoutMs: valueOf(query.timeoutMs) || "6500",
+    retries: valueOf(query.retries) || "1",
+    fastFail: valueOf(query.fastFail) || "1"
+  };
 
   let { url, parsed } = await fetchSearchPage(nativeQuery, page);
-  const candidateLimit = Math.max(Number(valueOf(query.contractCandidateLimit) || 0), 0);
+  const candidateLimit = Math.max(Number(valueOf(query.contractCandidateLimit) || 6), 0);
   const candidateItems = candidateLimit ? parsed.items.slice(0, candidateLimit) : parsed.items;
   const fastGlobal = valueOf(query._global) === "1";
+  const remainingBudget = Math.max(budgetMs - (Date.now() - searchStartedAt), 1200);
+  const detailTimeoutMs = Math.min(
+    Number(valueOf(query.detailTimeoutMs) || (fastGlobal ? 2200 : 1800)),
+    Math.max(remainingBudget - 400, 1000)
+  );
   const detailOptions = fastGlobal
     ? {
         retries: Number(valueOf(query.detailRetries) || 1),
-        timeoutMs: Number(valueOf(query.detailTimeoutMs) || 3200),
-        fallbackOnFetchError: false
+        timeoutMs: detailTimeoutMs,
+        fallbackOnFetchError: false,
+        concurrency: Number(valueOf(query.detailConcurrency) || 4),
+        deadlineAt: searchStartedAt + budgetMs
       }
-    : {};
-  let items = await enrichContractCandidates(candidateItems, contractManufacturer, detailOptions);
+    : {
+        retries: Number(valueOf(query.detailRetries) || 1),
+        timeoutMs: detailTimeoutMs,
+        fallbackOnFetchError: valueOf(query.detailFallback) === "1",
+        concurrency: Number(valueOf(query.detailConcurrency) || 4),
+        deadlineAt: searchStartedAt + budgetMs
+      };
+  const enriched = await enrichContractCandidates(candidateItems, contractManufacturer, detailOptions);
+  let items = enriched.items;
   let total = items.length;
   let sourceUrl = url;
-  let notice = `${CONTRACT_SEARCH_NOTICE} MFDS 목록 검색 조건에 없는 필드라 현재 조회된 목록의 상세정보 기준으로 확인합니다.`;
+  let notice = `${CONTRACT_SEARCH_NOTICE} 현재 조회된 목록 ${candidateItems.length}건의 상세정보 기준으로 확인합니다.`;
+  if (parsed.items.length > candidateItems.length) {
+    notice = `${notice} 응답 속도를 위해 먼저 ${candidateItems.length}건만 확인했습니다.`;
+  }
+  if (enriched.timedOut) {
+    notice = `${notice} 일부 상세 확인은 시간이 초과되어 건너뛰었습니다. 조건을 더 좁히면 더 정확합니다.`;
+  }
 
   const filteredItems = filterExtraIngredients(items, ingredient4, ingredient5);
   if (filteredItems.length !== items.length) {
     items = filteredItems;
     total = items.length;
-    notice = `${notice} 성분명4/5는 조회된 후보 결과 안에서 추가 필터링합니다.`;
+    notice = `${notice} 성분명4/5는 후보 결과 안에서 추가 필터링했습니다.`;
   }
 
   const pageSize = items.length || parsed.items.length || 10;
-  return setCached(searchMemoryCache, cacheKey, {
+  return searchMemoryCache.set(cacheKey, {
     page,
     pageSize,
     total,
@@ -738,13 +700,13 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
     items,
     notice,
     sourceUrl
-  }, SEARCH_CACHE_LIMIT);
+  });
 }
 
 async function searchMfds(query = {}) {
   const page = Math.max(Number(valueOf(query.page) || 1), 1);
   const cacheKey = buildQueryCacheKey({ ...query, page });
-  const cached = getCached(searchMemoryCache, cacheKey, SEARCH_CACHE_TTL_MS);
+  const cached = searchMemoryCache.get(cacheKey);
   if (cached) return cached;
 
   if (valueOf(query.contractManufacturer)) {
@@ -770,7 +732,7 @@ async function searchMfds(query = {}) {
   }
 
   const pageSize = items.length || parsed.items.length || 10;
-  return setCached(searchMemoryCache, cacheKey, {
+  return searchMemoryCache.set(cacheKey, {
     page,
     pageSize,
     total,
@@ -778,13 +740,13 @@ async function searchMfds(query = {}) {
     items,
     notice,
     sourceUrl: url
-  }, SEARCH_CACHE_LIMIT);
+  });
 }
 
 async function getMfdsDetail(itemSeq, options = {}) {
   if (!itemSeq) throw new Error("itemSeq is required");
   const cacheKey = String(itemSeq);
-  const cached = getCached(detailMemoryCache, cacheKey, DETAIL_CACHE_TTL_MS);
+  const cached = detailMemoryCache.get(cacheKey);
   if (cached) return cached;
 
   const detailUrl = `${BASE_URL}/pbp/CCBBB01/getItemDetail?itemSeq=${encodeURIComponent(itemSeq)}`;
@@ -793,7 +755,7 @@ async function getMfdsDetail(itemSeq, options = {}) {
   const { url, text } = await fetchMfdsText(detailUrl, retries, timeoutMs, {
     fallbackOnFetchError: options.fallbackOnFetchError !== false
   });
-  return setCached(detailMemoryCache, cacheKey, parseDetailHtml(text, url), DETAIL_CACHE_LIMIT);
+  return detailMemoryCache.set(cacheKey, parseDetailHtml(text, url));
 }
 
 async function getMfdsDetailsBatch(itemSeqs = [], concurrency = 5) {
@@ -831,6 +793,148 @@ async function getMfdsDetailsBatch(itemSeqs = [], concurrency = 5) {
   };
 }
 
+function toCsvValue(value) {
+  const text = Array.isArray(value) ? value.join("; ") : String(value ?? "");
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function mergeKeepNonEmpty(base, overlay) {
+  const result = { ...base };
+  for (const [key, value] of Object.entries(overlay || {})) {
+    if (value === "" && result[key] && result[key] !== "") continue;
+    result[key] = value;
+  }
+  return result;
+}
+
+async function generateMfdsCsv(query, cache = {}) {
+  const firstPage = await searchMfds({ ...query, page: 1 });
+  const total = firstPage.total || 0;
+  const maxItems = 1000;
+  const pageSize = firstPage.pageSize || 15;
+  let items = [...(firstPage.items || [])];
+
+  if (total > items.length && items.length < maxItems) {
+    const totalPages = Math.ceil(total / pageSize);
+    const maxPages = Math.ceil(maxItems / pageSize);
+    const pagesToFetch = [];
+    for (let p = 2; p <= Math.min(totalPages, maxPages); p += 1) {
+      pagesToFetch.push(p);
+    }
+
+    const fetchPage = async (p) => {
+      try {
+        const result = await searchMfds({ ...query, page: p });
+        return result.items || [];
+      } catch {
+        return [];
+      }
+    };
+
+    const concurrency = 5;
+    for (let i = 0; i < pagesToFetch.length; i += concurrency) {
+      const chunk = pagesToFetch.slice(i, i + concurrency);
+      const results = await Promise.all(chunk.map((p) => fetchPage(p)));
+      results.forEach((pageItems) => {
+        items.push(...pageItems);
+      });
+    }
+  }
+
+  items = items.slice(0, maxItems);
+
+  const detailedItems = [];
+  const concurrencyLimit = 3;
+
+  const fetchDetail = async (item) => {
+    const cached = cache[item.itemSeq];
+    if (cached && (cached.contractManufacturer || cached.performance)) {
+      return mergeKeepNonEmpty(item, cached);
+    }
+    try {
+      const detail = await getMfdsDetail(item.itemSeq, { retries: 2, timeoutMs: 12000 });
+      return mergeKeepNonEmpty(item, detail);
+    } catch {
+      // Fall back to cache-only or raw item
+      return cached ? mergeKeepNonEmpty(item, cached) : item;
+    }
+  };
+
+  for (let i = 0; i < items.length; i += concurrencyLimit) {
+    const chunk = items.slice(i, i + concurrencyLimit);
+    const results = await Promise.all(chunk.map((item) => fetchDetail(item)));
+    detailedItems.push(...results);
+    // Small delay between batches to avoid rate-limiting on government servers
+    if (i + concurrencyLimit < items.length) {
+      await delay(120);
+    }
+  }
+
+  const finalItems = detailedItems;
+
+  const years = new Set();
+  finalItems.forEach((drug) => {
+    if (drug.performance?.rows) {
+      drug.performance.rows.forEach((r) => {
+        if (r.year && /^\d{4}$/.test(r.year)) {
+          years.add(Number(r.year));
+        }
+      });
+    }
+  });
+  const perfYears = Array.from(years).sort((a, b) => a - b);
+
+  const headers = [
+    ["rowNumber", "순번"],
+    ["itemSeq", "품목기준코드"],
+    ["itemName", "제품명"],
+    ["itemEngName", "제품영문명"],
+    ["entpName", "업체명"],
+    ["entpEngName", "업체영문명"],
+    ["contractManufacturer", "위탁제조업체"],
+    ["etcOtc", "전문/일반"],
+    ["permitDate", "허가일"],
+    ["itemCategory", "품목구분"],
+    ["cancelStatus", "취소/취하"],
+    ["makeMaterial", "완제/원료"],
+    ["mainIngredient", "주성분"],
+    ["mainIngredientEng", "주성분영문명"],
+    ["additives", "첨가제"],
+    ["standardCode", "표준코드"],
+    ["atcCode", "ATC코드"]
+  ];
+
+  perfYears.forEach((year) => {
+    headers.push([`perf_${year}`, `${year}년 실적`]);
+  });
+
+  const lines = [
+    headers.map(([, label]) => toCsvValue(label)).join(",")
+  ];
+
+  finalItems.forEach((drug, index) => {
+    const rowNumber = String(index + 1);
+    const rowData = headers.map(([key]) => {
+      if (key === "rowNumber") return toCsvValue(rowNumber);
+      if (key.startsWith("perf_")) {
+        const year = Number(key.split("_")[1]);
+        const perf = drug.performance;
+        if (!perf || !perf.rows || !perf.rows.length) return toCsvValue("-");
+        const r = perf.rows.find((item) => Number(item.year) === year);
+        if (!r) return toCsvValue("-");
+        const unitText = perf.unit || "";
+        let symbol = unitText.includes("달러") || unitText.includes("$") ? "$" : "₩";
+        let suffix = symbol === "₩" && unitText.includes("천원") ? " (천원)" : "";
+        return toCsvValue(`${perf.type}: ${symbol}${r.amount}${suffix}`);
+      }
+      return toCsvValue(drug[key]);
+    });
+    lines.push(rowData.join(","));
+  });
+
+  return "\ufeff" + lines.join("\r\n");
+}
+
 module.exports = {
   BASE_URL,
   buildSearchCriteria,
@@ -840,5 +944,6 @@ module.exports = {
   parseDetailHtml,
   searchMfds,
   getMfdsDetail,
-  getMfdsDetailsBatch
+  getMfdsDetailsBatch,
+  generateMfdsCsv
 };
