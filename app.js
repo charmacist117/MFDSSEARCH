@@ -53,10 +53,11 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "human-autoload-20260616-2";
+const API_VERSION = "category-compare-20260617-1";
 const HOME_PREVIEW_LIMIT = 3;
 let compareSlotSeed = 0;
 const compareState = {
+  kind: "human",
   slots: []
 };
 const externalStates = {
@@ -64,6 +65,8 @@ const externalStates = {
   aquatic: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {}, columnWidths: {} }
 };
 let activeSearchKeyword = "";
+let activeCategory = "home";
+let activeWorkspaceTab = "search";
 const homeSearchState = {
   keyword: "",
   loading: false,
@@ -199,7 +202,8 @@ function buildSearchParams() {
   return params;
 }
 
-function defaultCompareFilters() {
+function defaultCompareFilters(kind = compareState.kind) {
+  if (kind !== "human") return {};
   return {
     itemCategory: "",
     cancelStatus: "",
@@ -208,18 +212,19 @@ function defaultCompareFilters() {
   };
 }
 
-function defaultCompareQuery() {
+function defaultCompareQuery(kind = compareState.kind) {
   return {
     efficacyOperator: "AND",
     dosageOperator: "AND",
-    precautionOperator: "AND"
+    ...(kind === "human" ? { precautionOperator: "AND" } : {})
   };
 }
 
-function createCompareSlot() {
+function createCompareSlot(kind = compareState.kind || "human") {
   compareSlotSeed += 1;
   return {
     id: String(compareSlotSeed),
+    kind,
     rows: [],
     total: 0,
     page: 1,
@@ -232,15 +237,19 @@ function createCompareSlot() {
     listLoading: false,
     error: "",
     notice: "",
-    filters: defaultCompareFilters(),
-    query: defaultCompareQuery(),
+    filters: defaultCompareFilters(kind),
+    query: defaultCompareQuery(kind),
     showExtra: false
   };
 }
 
-function ensureCompareSlot() {
+function ensureCompareSlot(kind = compareState.kind || "human") {
+  if (compareState.kind !== kind) {
+    compareState.kind = kind;
+    compareState.slots = [];
+  }
   if (!compareState.slots.length) {
-    compareState.slots.push(createCompareSlot());
+    compareState.slots.push(createCompareSlot(kind));
   }
 }
 
@@ -253,10 +262,20 @@ function compareSlotTitle(slot) {
   return `제품군 ${index + 1}`;
 }
 
+function compareKindLabel(kind = compareState.kind) {
+  if (kind === "vet") return "동물용 의약품";
+  if (kind === "aquatic") return "수산동물용 의약품";
+  return "인체용 의약품";
+}
+
+function isExternalCompare(slot) {
+  return slot?.kind === "vet" || slot?.kind === "aquatic";
+}
+
 function syncCompareQueryFromForm(slot, formEl) {
   if (!slot || !formEl) return;
   slot.query = {
-    ...defaultCompareQuery(),
+    ...defaultCompareQuery(slot.kind),
     ...Object.fromEntries(new FormData(formEl).entries())
   };
 }
@@ -426,6 +445,35 @@ function renderExternalSections(sections) {
     .join("");
 }
 
+function renderUsageHighlights(kind, detail = {}) {
+  if (kind !== "vet" && kind !== "aquatic") return "";
+  const highlights = detail.usageHighlights || {};
+  const usable = Array.isArray(highlights.usable) ? highlights.usable : [];
+  const unusable = Array.isArray(highlights.unusable) ? highlights.unusable : [];
+  const usableLabel = kind === "aquatic" ? "사용가능한 어종" : "사용가능한 축종";
+  const unusableLabel = kind === "aquatic" ? "사용불가능한 어종" : "사용불가능한 축종";
+  const chipList = (items, type) =>
+    items.length
+      ? items.map((item) => `<span class="species-chip ${type}">${escapeHtml(item)}</span>`).join("")
+      : `<span class="muted">상세 원문에서 명확한 항목을 찾지 못했습니다.</span>`;
+
+  return `
+    <section class="usage-highlight">
+      <h3 class="section-title">대상 동물 정보</h3>
+      <div class="usage-highlight-grid">
+        <div>
+          <strong>${escapeHtml(usableLabel)}</strong>
+          <div class="species-chip-row">${chipList(usable, "usable")}</div>
+        </div>
+        <div>
+          <strong>${escapeHtml(unusableLabel)}</strong>
+          <div class="species-chip-row">${chipList(unusable, "blocked")}</div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderExternalDetail(kind) {
   const dashboard = externalDashboard(kind);
   const { state } = dashboard;
@@ -461,6 +509,7 @@ function renderExternalDetail(kind) {
       ${isLoading ? `<p class="table-message">상세정보를 불러오는 중입니다.</p>` : ""}
       ${detail.error ? `<p class="table-message error">상세 원문을 가져오지 못했습니다: ${escapeHtml(detail.error)}</p>` : ""}
       ${renderKeyValue("기본정보", mergedPairs)}
+      ${renderUsageHighlights(kind, detail)}
       ${renderExternalIngredientRows(detail.ingredientRows)}
       ${renderExternalSections(detail.sections)}
       ${detail.summary ? renderTextSection("원문 텍스트", detail.summary, true) : ""}
@@ -595,6 +644,263 @@ async function loadExternalDetail(kind, rowKey, { force = false } = {}) {
   } finally {
     if (state.detailLoadingKey === rowKey) state.detailLoadingKey = "";
     renderExternalDashboard(kind);
+  }
+}
+
+function compactExternalCompareParams(slot) {
+  const params = new URLSearchParams({ ...slot.query, page: String(slot.page), _v: API_VERSION });
+  for (const [key, value] of [...params.entries()]) {
+    if (value === "") params.delete(key);
+  }
+  return params;
+}
+
+function externalCompareEndpoint(kind) {
+  return kind === "vet" ? "/api/vet-search" : "/api/aquatic-search";
+}
+
+function externalCompareRowKey(row, index = 0) {
+  return row.__key || externalRowKey(row, index);
+}
+
+function externalCompareSelectedRow(slot) {
+  return slot.rows.find((row, index) => externalCompareRowKey(row, index) === slot.selectedSeq);
+}
+
+function renderExternalCompareForm(slot) {
+  const isVet = slot.kind === "vet";
+  return `
+    <form class="filter-form compare-filter">
+      ${compareInput(slot, "제품명", "productName")}
+      ${isVet ? compareInput(slot, "제품영문명", "productEngName") : ""}
+      ${compareInput(slot, "업체명", "companyName")}
+      ${isVet ? compareInput(slot, "품목구분", "itemCategory") : ""}
+      ${compareInput(slot, "성분명1", "ingredient1")}
+      ${compareInput(slot, "성분명2", "ingredient2")}
+      ${compareInput(slot, "성분명3", "ingredient3")}
+      <button type="button" class="collapse-toggle" data-compare-extra aria-expanded="${String(slot.showExtra)}">
+        <span>추가 성분 검색</span>
+        <span class="collapse-icon">▴</span>
+      </button>
+      <div class="extra-ingredients-wrap ${slot.showExtra ? "" : "collapsed"}">
+        ${compareInput(slot, "성분명4", "ingredient4")}
+        ${compareInput(slot, "성분명5", "ingredient5")}
+      </div>
+      ${compareOperator(slot, "효능효과", "efficacyOperator", "efficacyQuery")}
+      ${compareOperator(slot, "용법용량", "dosageOperator", "dosageQuery")}
+      ${
+        isVet
+          ? `<div class="date-block">
+              <span>허가일</span>
+              <div class="quick-dates">
+                <button type="button" data-compare-range="">전체</button>
+                <button type="button" data-compare-range="1m">1개월</button>
+                <button type="button" data-compare-range="6m">6개월</button>
+                <button type="button" data-compare-range="1y">1년</button>
+                <button type="button" data-compare-range="3y">3년</button>
+              </div>
+              <div class="date-inputs">
+                <input type="date" name="permitStart" value="${escapeHtml(slot.query.permitStart || "")}">
+                <input type="date" name="permitEnd" value="${escapeHtml(slot.query.permitEnd || "")}">
+              </div>
+            </div>`
+          : `
+            ${compareInput(slot, "어종명", "fishName")}
+            ${compareInput(slot, "질병", "disease")}
+            ${compareInput(slot, "제형", "dosageForm")}
+          `
+      }
+      <div class="form-actions">
+        <button class="primary" type="submit">검색</button>
+        <button class="secondary" type="button" data-compare-reset>초기화</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderExternalCompareRows(slot) {
+  const columns = slot.kind === "vet"
+    ? [
+        { key: "itemName", label: "제품명" },
+        { key: "entpName", label: "업체명" },
+        { key: "itemCategory", label: "품목구분" },
+        { key: "permitDate", label: "허가일" }
+      ]
+    : [
+        { key: "itemName", label: "제품명" },
+        { key: "entpName", label: "업체명" },
+        { key: "dosageForm", label: "제형" },
+        { key: "route", label: "투여경로" },
+        { key: "permitDate", label: "최종허가일" }
+      ];
+  if (slot.listLoading) {
+    return `<tr><td colspan="${columns.length}" class="table-message">목록을 불러오는 중입니다.</td></tr>`;
+  }
+  if (slot.error) {
+    return `<tr><td colspan="${columns.length}" class="table-message error">${escapeHtml(slot.error)}</td></tr>`;
+  }
+  if (!slot.rows.length) {
+    return `<tr><td colspan="${columns.length}" class="table-message">검색 조건을 입력하고 검색하세요.</td></tr>`;
+  }
+
+  return slot.rows
+    .map((row, index) => {
+      const rowKey = externalCompareRowKey(row, index);
+      row.__key = rowKey;
+      const selected = rowKey === slot.selectedSeq ? "selected" : "";
+      return `
+        <tr class="${selected}" data-compare-select="${escapeHtml(rowKey)}">
+          ${columns
+            .map((column) => {
+              const value = row[column.key] || "-";
+              if (column.key === "itemName") {
+                return `
+                  <td>
+                    <button type="button">${escapeHtml(value)}</button>
+                    <div class="tag-row">
+                      <span class="tag blue">${escapeHtml(row.permitNumber || row.productCode || row.rowNumber || "-")}</span>
+                      <span class="tag">${escapeHtml(row.itemCategory || row.dosageForm || "-")}</span>
+                    </div>
+                  </td>
+                `;
+              }
+              return `<td>${escapeHtml(value)}</td>`;
+            })
+            .join("")}
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function renderExternalCompareHeaders(slot) {
+  const columns = slot.kind === "vet"
+    ? ["제품명", "업체명", "품목구분", "허가일"]
+    : ["제품명", "업체명", "제형", "투여경로", "최종허가일"];
+  return columns.map((label) => `<th>${escapeHtml(label)}</th>`).join("");
+}
+
+function renderExternalCompareDetail(slot) {
+  const row = externalCompareSelectedRow(slot);
+  if (slot.detailLoadingSeq === slot.selectedSeq) {
+    return `<div class="compare-detail-empty">상세정보를 불러오는 중입니다.</div>`;
+  }
+  if (!row) {
+    return `<div class="compare-detail-empty">검색 결과에서 비교할 제품을 선택하세요.</div>`;
+  }
+
+  const detail = slot.detailCache[slot.selectedSeq] || {};
+  const detailPairs = Array.isArray(detail.pairs) ? detail.pairs : [];
+  const basicPairs = externalBasicPairs(slot.kind, row);
+  const pairKeys = new Set(basicPairs.map(([key]) => key));
+  const mergedPairs = [...basicPairs, ...detailPairs.filter(([key]) => !pairKeys.has(key))];
+
+  return `
+    <article class="compare-detail-panel">
+      <header>
+        <h3>${escapeHtml(row.itemName || "-")}</h3>
+        <p>${escapeHtml(row.entpName || "")}</p>
+      </header>
+      <div class="compare-detail-content">
+        ${detail.error ? `
+          <div class="table-message error detail-error">
+            <span>${escapeHtml(detail.error)}</span>
+            <button type="button" data-compare-retry-detail="${escapeHtml(slot.selectedSeq)}">다시 시도</button>
+          </div>
+        ` : ""}
+        ${renderKeyValue("기본정보", mergedPairs)}
+        ${renderUsageHighlights(slot.kind, detail)}
+        ${renderExternalIngredientRows(detail.ingredientRows)}
+        ${renderExternalSections(detail.sections)}
+        ${detail.summary ? renderTextSection("원문 텍스트", detail.summary, true) : ""}
+        ${renderExternalTablePreview((detail.tables || []).filter((table) => !(detail.ingredientRows?.length && table.title === "원료약품 및 분량")))}
+      </div>
+    </article>
+  `;
+}
+
+async function loadExternalCompareResults(slotId, { resetPage = false } = {}) {
+  const slot = getCompareSlot(slotId);
+  if (!slot || !isExternalCompare(slot)) return;
+  const slotEl = compareSlots.querySelector(`[data-slot-id="${CSS.escape(slot.id)}"]`);
+  syncCompareQueryFromForm(slot, slotEl?.querySelector("form"));
+  if (resetPage) slot.page = 1;
+  slot.listLoading = true;
+  slot.error = "";
+  slot.notice = "";
+  slot.selectedSeq = "";
+  slot.detailLoadingSeq = "";
+  renderCompareSlots();
+
+  try {
+    const response = await fetch(`${externalCompareEndpoint(slot.kind)}?${compactExternalCompareParams(slot)}`);
+    if (!response.ok) {
+      let errMsg = `검색 요청 실패 (${response.status})`;
+      try {
+        const errJson = await response.json();
+        if (errJson?.message) errMsg += `: ${errJson.message}`;
+      } catch {}
+      throw new Error(errMsg);
+    }
+    const payload = await response.json();
+    slot.rows = (payload.items || []).map((row, index) => ({ ...row, __key: externalRowKey(row, index) }));
+    slot.total = Number(payload.total || slot.rows.length || 0);
+    slot.notice = payload.notice || "";
+    slot.page = Number(payload.page || slot.page);
+    slot.pageSize = Number(payload.pageSize || slot.rows.length || 10);
+    slot.totalPages = Math.max(Number(payload.totalPages || 1), 1);
+    slot.selectedSeq = slot.rows[0]?.__key || "";
+  } catch (error) {
+    slot.rows = [];
+    slot.total = 0;
+    slot.totalPages = 1;
+    slot.selectedSeq = "";
+    slot.error = friendlySearchError(error);
+  } finally {
+    slot.listLoading = false;
+    renderCompareSlots();
+  }
+
+  if (slot.selectedSeq) {
+    setTimeout(() => loadExternalCompareDetail(slot.id, slot.selectedSeq), 0);
+  }
+}
+
+async function loadExternalCompareDetail(slotId, rowKey, { force = false } = {}) {
+  const slot = getCompareSlot(slotId);
+  if (!slot || !isExternalCompare(slot) || !rowKey) return;
+  const row = slot.rows.find((item, index) => externalCompareRowKey(item, index) === rowKey);
+  if (!row) return;
+
+  slot.selectedSeq = rowKey;
+  renderCompareSlots();
+  if (!force && slot.detailCache[rowKey]) return;
+
+  if (row.hasDetailUrl === false || !row.sourceUrl) {
+    slot.detailCache[rowKey] = { pairs: [], tables: [], summary: "" };
+    renderCompareSlots();
+    return;
+  }
+
+  slot.detailLoadingSeq = rowKey;
+  renderCompareSlots();
+  try {
+    const params = new URLSearchParams({ kind: slot.kind, sourceUrl: row.sourceUrl, _v: API_VERSION });
+    const response = await fetch(`/api/public-detail?${params}`);
+    if (!response.ok) {
+      let message = `상세 요청 실패 (${response.status})`;
+      try {
+        const body = await response.json();
+        if (body?.message) message += `: ${body.message}`;
+      } catch {}
+      throw new Error(message);
+    }
+    slot.detailCache[rowKey] = await response.json();
+  } catch (error) {
+    slot.detailCache[rowKey] = { error: friendlySearchError(error), pairs: [], tables: [], summary: "" };
+  } finally {
+    if (slot.detailLoadingSeq === rowKey) slot.detailLoadingSeq = "";
+    renderCompareSlots();
   }
 }
 
@@ -746,11 +1052,18 @@ function compareSelectedDrug(slot) {
 
 function showHome() {
   closeChanges();
+  activeCategory = "home";
+  activeWorkspaceTab = "search";
   categoryTabs.forEach((button) => {
     button.classList.remove("active");
     button.setAttribute("aria-selected", "false");
   });
   homeButton?.classList.add("active");
+  workspaceTabs.forEach((button) => {
+    const active = button.dataset.workspaceTab === "search";
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
   document.querySelector(".workspace-tabs")?.setAttribute("hidden", "");
   if (homeWorkspace) homeWorkspace.hidden = false;
   if (searchWorkspace) searchWorkspace.hidden = true;
@@ -1173,16 +1486,17 @@ function renderCompareSlot(slot) {
   const index = compareState.slots.findIndex((item) => item.id === slot.id);
   const pageStart = slot.total && slot.rows.length ? (slot.page - 1) * slot.pageSize + 1 : 0;
   const pageEnd = slot.total && slot.rows.length ? pageStart + slot.rows.length - 1 : 0;
+  const external = isExternalCompare(slot);
   return `
     <section class="compare-slot ${index === 0 ? "active" : ""}" data-slot-id="${escapeHtml(slot.id)}">
       <header class="compare-slot-head">
         <div>
           <h2>${escapeHtml(compareSlotTitle(slot))}</h2>
-          <p>총 ${slot.total.toLocaleString("ko-KR")}건${slot.rows.length ? ` (${pageStart.toLocaleString("ko-KR")}-${pageEnd.toLocaleString("ko-KR")})` : ""}</p>
+          <p>${escapeHtml(compareKindLabel(slot.kind))} · 총 ${slot.total.toLocaleString("ko-KR")}건${slot.rows.length ? ` (${pageStart.toLocaleString("ko-KR")}-${pageEnd.toLocaleString("ko-KR")})` : ""}</p>
         </div>
         ${compareState.slots.length > 1 ? `<button type="button" data-compare-remove aria-label="${escapeHtml(compareSlotTitle(slot))} 닫기">×</button>` : ""}
       </header>
-      ${renderCompareForm(slot)}
+      ${external ? renderExternalCompareForm(slot) : renderCompareForm(slot)}
       ${slot.notice ? `<p class="compare-notice">${escapeHtml(slot.notice)}</p>` : ""}
       <div class="compare-pager">
         <button type="button" data-compare-page="prev" ${slot.page <= 1 ? "disabled" : ""}>이전</button>
@@ -1193,27 +1507,38 @@ function renderCompareSlot(slot) {
         <table class="result-table compare-result-table">
           <thead>
             <tr>
-              <th>제품명</th>
-              <th>업체명</th>
-              <th>주성분</th>
-              <th>단위용량</th>
-              <th>전문/일반</th>
-              <th>허가일</th>
+              ${
+                external
+                  ? renderExternalCompareHeaders(slot)
+                  : `
+                    <th>제품명</th>
+                    <th>업체명</th>
+                    <th>주성분</th>
+                    <th>단위용량</th>
+                    <th>전문/일반</th>
+                    <th>허가일</th>
+                  `
+              }
             </tr>
           </thead>
-          <tbody>${renderCompareRows(slot)}</tbody>
+          <tbody>${external ? renderExternalCompareRows(slot) : renderCompareRows(slot)}</tbody>
         </table>
       </div>
-      ${renderCompareDetail(slot)}
+      ${external ? renderExternalCompareDetail(slot) : renderCompareDetail(slot)}
     </section>
   `;
 }
 
 function renderCompareSlots() {
   if (!compareSlots) return;
+  const title = compareWorkspace?.querySelector(".compare-header h1");
+  const description = compareWorkspace?.querySelector(".compare-header p");
+  if (title) title.textContent = `${compareKindLabel(compareState.kind)} 제품군 비교`;
+  if (description) description.textContent = "최대 5개 제품군을 나란히 검색하고 상세정보를 비교합니다.";
   compareSlots.innerHTML = compareState.slots.map((slot) => renderCompareSlot(slot)).join("");
   if (addCompareSlotButton) {
     addCompareSlotButton.disabled = compareState.slots.length >= compareSlotLimit;
+    addCompareSlotButton.textContent = "+ 제품군 비교 추가하기";
   }
 }
 
@@ -2298,31 +2623,46 @@ detailPanel.addEventListener("click", (event) => {
 });
 
 function setWorkspaceTab(tabName) {
+  activeWorkspaceTab = tabName === "compare" ? "compare" : "search";
   if (homeWorkspace) homeWorkspace.hidden = true;
   homeButton?.classList.remove("active");
   workspaceTabs.forEach((button) => {
-    const active = button.dataset.workspaceTab === tabName;
+    const active = button.dataset.workspaceTab === activeWorkspaceTab;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
-  if (searchWorkspace) searchWorkspace.hidden = tabName !== "search";
-  if (compareWorkspace) compareWorkspace.hidden = tabName !== "compare";
-  document.body.classList.toggle("compare-mode", tabName === "compare");
-  if (tabName === "compare") {
-    ensureCompareSlot();
+  if (searchWorkspace) searchWorkspace.hidden = true;
+  if (vetWorkspace) vetWorkspace.hidden = true;
+  if (aquaticWorkspace) aquaticWorkspace.hidden = true;
+  if (compareWorkspace) compareWorkspace.hidden = true;
+  document.body.classList.toggle("compare-mode", activeWorkspaceTab === "compare");
+
+  if (activeWorkspaceTab === "compare") {
+    const compareKind = activeCategory === "vet" || activeCategory === "aquatic" ? activeCategory : "human";
+    if (compareWorkspace) compareWorkspace.hidden = false;
+    ensureCompareSlot(compareKind);
     renderCompareSlots();
+    return;
   }
-  if (tabName === "search") {
+
+  if (activeCategory === "vet") {
+    if (vetWorkspace) vetWorkspace.hidden = false;
+    if (!externalStates.vet.loaded) loadExternalResults("vet");
+  } else if (activeCategory === "aquatic") {
+    if (aquaticWorkspace) aquaticWorkspace.hidden = false;
+    if (!externalStates.aquatic.loaded) loadExternalResults("aquatic");
+  } else {
+    if (searchWorkspace) searchWorkspace.hidden = false;
     maybeAutoLoadHumanResults();
   }
 }
 
-function currentHumanTab() {
-  return document.querySelector("[data-workspace-tab].active")?.dataset.workspaceTab || "search";
+function currentWorkspaceTab() {
+  return activeWorkspaceTab || document.querySelector("[data-workspace-tab].active")?.dataset.workspaceTab || "search";
 }
 
 function maybeAutoLoadHumanResults({ force = false } = {}) {
-  const humanTabActive = document.querySelector('[data-category-tab="human"]')?.classList.contains("active");
+  const humanTabActive = activeCategory === "human";
   const searchVisible = searchWorkspace && !searchWorkspace.hidden;
   if (!humanTabActive || !searchVisible || state.listLoading) return;
   const emptyStaleState = state.loaded && state.total === 0 && !state.rows.length && !state.error;
@@ -2332,35 +2672,18 @@ function maybeAutoLoadHumanResults({ force = false } = {}) {
 
 function setCategoryTab(categoryName, { autoLoad = true } = {}) {
   closeChanges();
+  activeCategory = categoryName === "vet" || categoryName === "aquatic" ? categoryName : "human";
   if (homeWorkspace) homeWorkspace.hidden = true;
   homeButton?.classList.remove("active");
   categoryTabs.forEach((button) => {
-    const active = button.dataset.categoryTab === categoryName;
+    const active = button.dataset.categoryTab === activeCategory;
     button.classList.toggle("active", active);
     button.setAttribute("aria-selected", String(active));
   });
 
-  const isHuman = categoryName === "human";
-  document.querySelector(".workspace-tabs")?.toggleAttribute("hidden", !isHuman);
-  if (vetWorkspace) vetWorkspace.hidden = categoryName !== "vet";
-  if (aquaticWorkspace) aquaticWorkspace.hidden = categoryName !== "aquatic";
-
-  if (isHuman) {
-    setWorkspaceTab(currentHumanTab());
-    if (autoLoad) maybeAutoLoadHumanResults();
-    return;
-  }
-
-  if (searchWorkspace) searchWorkspace.hidden = true;
-  if (compareWorkspace) compareWorkspace.hidden = true;
-  document.body.classList.remove("compare-mode");
-
-  if (categoryName === "vet" && !externalStates.vet.loaded) {
-    loadExternalResults("vet");
-  }
-  if (categoryName === "aquatic" && !externalStates.aquatic.loaded) {
-    loadExternalResults("aquatic");
-  }
+  document.querySelector(".workspace-tabs")?.removeAttribute("hidden");
+  setWorkspaceTab(currentWorkspaceTab());
+  if (autoLoad && activeCategory === "human") maybeAutoLoadHumanResults();
 }
 
 function syncVisibleCompareForms() {
@@ -2490,7 +2813,7 @@ if (addCompareSlotButton) {
   addCompareSlotButton.addEventListener("click", () => {
     if (compareState.slots.length >= compareSlotLimit) return;
     syncVisibleCompareForms();
-    compareState.slots.push(createCompareSlot());
+    compareState.slots.push(createCompareSlot(compareState.kind));
     renderCompareSlots();
   });
 }
@@ -2501,7 +2824,12 @@ if (compareSlots) {
     if (!formEl) return;
     event.preventDefault();
     const slotEl = formEl.closest("[data-slot-id]");
-    loadCompareResults(slotEl?.dataset.slotId, { resetPage: true });
+    const slot = getCompareSlot(slotEl?.dataset.slotId);
+    if (isExternalCompare(slot)) {
+      loadExternalCompareResults(slot.id, { resetPage: true });
+    } else {
+      loadCompareResults(slot?.id, { resetPage: true });
+    }
   });
 
   compareSlots.addEventListener("click", (event) => {
@@ -2514,14 +2842,18 @@ if (compareSlots) {
     if (removeButton) {
       syncVisibleCompareForms();
       compareState.slots = compareState.slots.filter((item) => item.id !== slot.id);
-      ensureCompareSlot();
+      ensureCompareSlot(compareState.kind);
       renderCompareSlots();
       return;
     }
 
     const retryButton = event.target.closest("[data-compare-retry-detail]");
     if (retryButton) {
-      loadCompareDetail(slot.id, retryButton.dataset.compareRetryDetail || slot.selectedSeq, { force: true });
+      if (isExternalCompare(slot)) {
+        loadExternalCompareDetail(slot.id, retryButton.dataset.compareRetryDetail || slot.selectedSeq, { force: true });
+      } else {
+        loadCompareDetail(slot.id, retryButton.dataset.compareRetryDetail || slot.selectedSeq, { force: true });
+      }
       return;
     }
 
@@ -2529,7 +2861,11 @@ if (compareSlots) {
     if (selectedRow) {
       slot.selectedSeq = selectedRow.dataset.compareSelect;
       renderCompareSlots();
-      loadCompareDetail(slot.id, slot.selectedSeq);
+      if (isExternalCompare(slot)) {
+        loadExternalCompareDetail(slot.id, slot.selectedSeq);
+      } else {
+        loadCompareDetail(slot.id, slot.selectedSeq);
+      }
       return;
     }
 
@@ -2539,7 +2875,11 @@ if (compareSlots) {
       syncCompareQueryFromForm(slot, slotEl.querySelector("form"));
       if (pageButton.dataset.comparePage === "prev") slot.page = Math.max(1, slot.page - 1);
       if (pageButton.dataset.comparePage === "next") slot.page = Math.min(slot.totalPages, slot.page + 1);
-      loadCompareResults(slot.id);
+      if (isExternalCompare(slot)) {
+        loadExternalCompareResults(slot.id);
+      } else {
+        loadCompareResults(slot.id);
+      }
       return;
     }
 
@@ -2558,8 +2898,8 @@ if (compareSlots) {
         listLoading: false,
         error: "",
         notice: "",
-        filters: defaultCompareFilters(),
-        query: defaultCompareQuery(),
+        filters: defaultCompareFilters(slot.kind),
+        query: defaultCompareQuery(slot.kind),
         showExtra: false
       });
       renderCompareSlots();

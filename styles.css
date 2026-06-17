@@ -1032,6 +1032,54 @@ button:focus-visible {
   max-height: 220px;
 }
 
+.usage-highlight {
+  border: 1px solid #cfe0e6;
+  background: #f8fcfd;
+  padding: 10px;
+}
+
+.usage-highlight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.usage-highlight-grid strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #263941;
+  font-size: 12px;
+}
+
+.species-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.species-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.species-chip.usable {
+  border: 1px solid #9dd1bd;
+  background: #e9f8f1;
+  color: #12623f;
+}
+
+.species-chip.blocked {
+  border: 1px solid #efb2b8;
+  background: #fff0f2;
+  color: #9e2433;
+}
+
 .external-result-table {
   min-width: 780px;
 }
