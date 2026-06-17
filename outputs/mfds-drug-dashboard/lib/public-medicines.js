@@ -104,6 +104,85 @@ function rowVisibleText(item) {
   ].filter(Boolean).join(" ");
 }
 
+function isPresenceToken(value) {
+  const token = valueOf(value).trim();
+  return token === "#" || token === "$";
+}
+
+function normalSearchValue(value) {
+  return isPresenceToken(value) ? "" : valueOf(value);
+}
+
+function valueHasContent(value) {
+  if (Array.isArray(value)) return value.some(valueHasContent);
+  const text = String(value ?? "").trim();
+  return Boolean(text && text !== "-");
+}
+
+function ingredientPartCount(value) {
+  return String(value || "")
+    .split(/\s*[/,]\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean).length;
+}
+
+const PUBLIC_PRESENCE_FIELDS = new Set([
+  "productName",
+  "productEngName",
+  "companyName",
+  "itemCategory",
+  "ingredient1",
+  "ingredient2",
+  "ingredient3",
+  "ingredient4",
+  "ingredient5",
+  "efficacyQuery",
+  "dosageQuery",
+  "precautionQuery",
+  "fishName",
+  "disease",
+  "dosageForm"
+]);
+
+function extractPublicPresenceFilters(query = {}) {
+  return Object.keys(query)
+    .filter((field) => PUBLIC_PRESENCE_FIELDS.has(field) && isPresenceToken(query[field]))
+    .map((field) => ({ field, mode: valueOf(query[field]).trim() }));
+}
+
+function publicFieldHasContent(item, field) {
+  if (["efficacyQuery", "dosageQuery", "precautionQuery"].includes(field)) {
+    return item.hasDetailUrl !== false || valueHasContent(item.note || item.condition);
+  }
+  if (/^ingredient[1-5]$/.test(field)) {
+    const index = Number(field.replace("ingredient", ""));
+    return ingredientPartCount(item.mainIngredient || item.note || "") >= index;
+  }
+  const fieldMap = {
+    productName: "itemName",
+    productEngName: "itemEngName",
+    companyName: "entpName",
+    itemCategory: "itemCategory",
+    efficacyQuery: "efficacy",
+    dosageQuery: "dosage",
+    precautionQuery: "precaution",
+    fishName: "fishName",
+    disease: "disease",
+    dosageForm: "dosageForm"
+  };
+  return valueHasContent(item[fieldMap[field] || field]);
+}
+
+function applyPublicPresenceFilters(items, filters = []) {
+  if (!filters.length) return items;
+  return items.filter((item) =>
+    filters.every(({ field, mode }) => {
+      const hasContent = publicFieldHasContent(item, field);
+      return mode === "#" ? hasContent : !hasContent;
+    })
+  );
+}
+
 function requireVisibleMatches(item, values = []) {
   const text = rowVisibleText(item);
   return values.every((value) => includesText(text, value, true));
@@ -111,7 +190,7 @@ function requireVisibleMatches(item, values = []) {
 
 function effectiveQueryValues(query = {}, keys = []) {
   return keys
-    .map((key) => valueOf(query[key]).trim())
+    .map((key) => normalSearchValue(query[key]).trim())
     .filter(Boolean);
 }
 
@@ -181,30 +260,30 @@ function detailKeyFor(row, index) {
 
 function ingredientValues(query = {}) {
   return [1, 2, 3, 4, 5]
-    .map((index) => valueOf(query[`ingredient${index}`]).trim())
+    .map((index) => normalSearchValue(query[`ingredient${index}`]).trim())
     .filter(Boolean);
 }
 
 function buildVetUrl(query = {}) {
   const ingredients = ingredientValues(query);
-  const efficacyQuery = valueOf(query.efficacyQuery);
-  const dosageQuery = valueOf(query.dosageQuery);
-  const precautionQuery = valueOf(query.precautionQuery);
+  const efficacyQuery = normalSearchValue(query.efficacyQuery);
+  const dosageQuery = normalSearchValue(query.dosageQuery);
+  const precautionQuery = normalSearchValue(query.precautionQuery);
   const params = new URLSearchParams({
     csSignature: "/pty5cD24mE8YS6L+3jPAw==",
     sort: "",
     sortOrder: "false",
     searchYn: "true",
     ExcelRowdata: "",
-    page: valueOf(query.page) || "1",
+    page: normalSearchValue(query.page) || "1",
     searchDivision: "detail",
-    itemName: valueOf(query.productName),
-    itemEngName: valueOf(query.productEngName),
-    entpName: valueOf(query.companyName),
-    indutyClassCode: valueOf(query.itemCategory),
-    startPermitDate: valueOf(query.permitStart),
-    endPermitDate: valueOf(query.permitEnd),
-    ingrMainName: ingredients[0] || valueOf(query.ingredientName),
+    itemName: normalSearchValue(query.productName),
+    itemEngName: normalSearchValue(query.productEngName),
+    entpName: normalSearchValue(query.companyName),
+    indutyClassCode: normalSearchValue(query.itemCategory),
+    startPermitDate: normalSearchValue(query.permitStart),
+    endPermitDate: normalSearchValue(query.permitEnd),
+    ingrMainName: ingredients[0] || normalSearchValue(query.ingredientName),
     ingrName1: ingredients[0] || "",
     ingrName2: ingredients[1] || "",
     ingrName3: ingredients[2] || "",
@@ -223,15 +302,16 @@ function buildVetUrl(query = {}) {
     cautionDocData: precautionQuery,
     caution: precautionQuery,
     precaution: precautionQuery,
-    searchConEe: valueOf(query.efficacyOperator) || "AND",
-    searchConUd: valueOf(query.dosageOperator) || "AND",
-    searchConNb: valueOf(query.precautionOperator) || "AND"
+    searchConEe: normalSearchValue(query.efficacyOperator) || "AND",
+    searchConUd: normalSearchValue(query.dosageOperator) || "AND",
+    searchConNb: normalSearchValue(query.precautionOperator) || "AND"
   });
   return `${VET_BASE_URL}?${params}`;
 }
 
 function parseVetHtml(html, sourceUrl, query = {}) {
-  const rows = parseRows(html)
+  const presenceFilters = extractPublicPresenceFilters(query);
+  const matchedRows = parseRows(html)
     .filter((row) => row.cells.length >= 4 && !row.cells.includes("순번"))
     .map((row, index) => {
       const cells = row.cells;
@@ -278,9 +358,10 @@ function parseVetHtml(html, sourceUrl, query = {}) {
         "precautionQuery"
       ]))
     );
+  const rows = applyPublicPresenceFilters(matchedRows, presenceFilters);
 
   const totalPages = parsePaginationTotalPages(html);
-  const hasClientFilter = effectiveQueryValues(query, ["ingredient1", "ingredient2", "ingredient3", "ingredient4", "ingredient5", "efficacyQuery", "dosageQuery", "precautionQuery"]).length > 0;
+  const hasClientFilter = presenceFilters.length > 0 || effectiveQueryValues(query, ["ingredient1", "ingredient2", "ingredient3", "ingredient4", "ingredient5", "efficacyQuery", "dosageQuery", "precautionQuery"]).length > 0;
   const total = hasClientFilter ? rows.length : parseTotal(html, totalPages ? totalPages * Math.max(rows.length, 10) : rows.length);
   return { total, totalPages: hasClientFilter ? 1 : totalPages, items: rows };
 }
@@ -288,15 +369,16 @@ function parseVetHtml(html, sourceUrl, query = {}) {
 function buildAquaticUrl(query = {}) {
   const ingredients = ingredientValues(query);
   const ingredientQuery = ingredients.join(" ");
-  const efficacyQuery = valueOf(query.efficacyQuery);
-  const dosageQuery = valueOf(query.dosageQuery);
+  const efficacyQuery = normalSearchValue(query.efficacyQuery);
+  const dosageQuery = normalSearchValue(query.dosageQuery);
+  const precautionQuery = normalSearchValue(query.precautionQuery);
   const params = new URLSearchParams({
-    pageNo: valueOf(query.page) || "1",
-    prdlstNm: valueOf(query.productName),
-    goodsNm: valueOf(query.productName),
-    bsshNm: valueOf(query.companyName),
-    entrpsNm: valueOf(query.companyName),
-    ingrNm: ingredientQuery || valueOf(query.ingredientName),
+    pageNo: normalSearchValue(query.page) || "1",
+    prdlstNm: normalSearchValue(query.productName),
+    goodsNm: normalSearchValue(query.productName),
+    bsshNm: normalSearchValue(query.companyName),
+    entrpsNm: normalSearchValue(query.companyName),
+    ingrNm: ingredientQuery || normalSearchValue(query.ingredientName),
     ingrNm1: ingredients[0] || "",
     ingrNm2: ingredients[1] || "",
     ingrNm3: ingredients[2] || "",
@@ -307,17 +389,22 @@ function buildAquaticUrl(query = {}) {
     efcyQesitm: efficacyQuery,
     usage: dosageQuery,
     dosage: dosageQuery,
-    searchConEe: valueOf(query.efficacyOperator) || "AND",
-    searchConUd: valueOf(query.dosageOperator) || "AND",
-    fishNm: valueOf(query.fishName),
-    dissNm: valueOf(query.disease),
-    dosageForm: valueOf(query.dosageForm)
+    caution: precautionQuery,
+    precaution: precautionQuery,
+    nbDocData: precautionQuery,
+    searchConEe: normalSearchValue(query.efficacyOperator) || "AND",
+    searchConUd: normalSearchValue(query.dosageOperator) || "AND",
+    searchConNb: normalSearchValue(query.precautionOperator) || "AND",
+    fishNm: normalSearchValue(query.fishName),
+    dissNm: normalSearchValue(query.disease),
+    dosageForm: normalSearchValue(query.dosageForm)
   });
   return `${AQUATIC_BASE_URL}?${params}`;
 }
 
 function parseAquaticHtml(html, sourceUrl, query = {}) {
-  const rows = parseRows(html)
+  const presenceFilters = extractPublicPresenceFilters(query);
+  const matchedRows = parseRows(html)
     .filter((row) => {
       const joined = row.cells.join(" ");
       return row.cells.length >= 7 && !joined.includes("허가번호 업체명 제품명");
@@ -354,14 +441,16 @@ function parseAquaticHtml(html, sourceUrl, query = {}) {
         "ingredient5",
         "efficacyQuery",
         "dosageQuery",
+        "precautionQuery",
         "fishName",
         "disease",
         "dosageForm"
       ]));
     });
+  const rows = applyPublicPresenceFilters(matchedRows, presenceFilters);
 
   const totalPages = parsePaginationTotalPages(html);
-  const hasClientFilter = effectiveQueryValues(query, ["ingredient1", "ingredient2", "ingredient3", "ingredient4", "ingredient5", "efficacyQuery", "dosageQuery", "fishName", "disease", "dosageForm"]).length > 0;
+  const hasClientFilter = presenceFilters.length > 0 || effectiveQueryValues(query, ["ingredient1", "ingredient2", "ingredient3", "ingredient4", "ingredient5", "efficacyQuery", "dosageQuery", "precautionQuery", "fishName", "disease", "dosageForm"]).length > 0;
   const total = hasClientFilter ? rows.length : parseTotal(html, totalPages ? totalPages * Math.max(rows.length, 10) : rows.length);
   return { total, totalPages: hasClientFilter ? 1 : totalPages, items: rows };
 }
@@ -391,11 +480,23 @@ function allowedDetailHost(kind, sourceUrl) {
 function addPair(pairs, seen, key, value) {
   const label = cleanText(key);
   const text = cleanText(value);
-  if (!label || !text) return;
+  if (!label || !text || !isUsefulDetailPair(label, text)) return;
   const fingerprint = `${label}:${text}`;
   if (seen.has(fingerprint)) return;
   seen.add(fingerprint);
   pairs.push([label, text]);
+}
+
+function isUsefulDetailPair(label, value) {
+  const cleanLabel = String(label || "").trim();
+  const cleanValue = String(value || "").trim();
+  if (!cleanLabel || !cleanValue) return false;
+  if (/^\d+(?:[.,]\d+)?$/.test(cleanLabel)) return false;
+  if (/^(?:mg|㎎|g|kg|ml|mL|L|IU|MC|유니트)$/i.test(cleanLabel)) return false;
+  if (/^\d+(?:[.,]\d+)?\s*(?:mg|㎎|g|kg|ml|mL|L|IU|MC)?$/i.test(cleanLabel)) return false;
+  if (/^(?:체중|용량|순번|성분명|분량|단위|규격)$/i.test(cleanLabel)) return false;
+  if (/^\d+(?:\.\d+)?\s*~\s*\d+(?:\.\d+)?\s*kg/i.test(cleanLabel)) return false;
+  return true;
 }
 
 function classifyTableTitle(title, rows) {
@@ -405,6 +506,62 @@ function classifyTableTitle(title, rows) {
   if (/효능|효과|대상질병/i.test(source)) return "효능효과";
   if (/주의|금기|휴약/i.test(source)) return "주의사항";
   return title || "상세 표";
+}
+
+function tableFingerprint(table) {
+  return `${table.title || ""}:${(table.rows || []).map((row) => row.join("|")).join("||")}`;
+}
+
+function isDoseHeaderRow(row = []) {
+  const labels = row.map((cell) => String(cell || "").replace(/\s+/g, ""));
+  return labels.includes("체중") && labels.includes("용량");
+}
+
+function looksLikeDoseRow(row = []) {
+  const text = row.join(" ");
+  return /\d/.test(text) && /(kg|㎏|ml|mL|밀리리터|mg|㎎)/i.test(text);
+}
+
+function extractDoseTable(rows = []) {
+  const headerIndex = rows.findIndex(isDoseHeaderRow);
+  if (headerIndex < 0) return null;
+  const header = rows[headerIndex];
+  const body = [];
+  for (const row of rows.slice(headerIndex + 1)) {
+    if (!row.length) continue;
+    if (isDoseHeaderRow(row)) continue;
+    if (!looksLikeDoseRow(row)) break;
+    body.push(row);
+  }
+  return body.length ? { title: "체중별 투여량", rows: [header, ...body] } : null;
+}
+
+function looksLikeKeyValueTable(rows = []) {
+  if (rows.length < 3) return false;
+  const twoColumnRows = rows.filter((row) => row.length === 2);
+  if (twoColumnRows.length < Math.ceil(rows.length * 0.65)) return false;
+  return twoColumnRows.some(([label, value]) => isUsefulDetailPair(label, value));
+}
+
+function normalizeTableBlocks(blocks = []) {
+  const normalized = [];
+  const seen = new Set();
+  const push = (table) => {
+    if (!table?.rows?.length) return;
+    const fingerprint = tableFingerprint(table);
+    if (seen.has(fingerprint)) return;
+    seen.add(fingerprint);
+    normalized.push(table);
+  };
+
+  for (const block of blocks) {
+    const doseTable = extractDoseTable(block.rows);
+    if (doseTable) push(doseTable);
+    if (looksLikeKeyValueTable(block.rows)) continue;
+    if (doseTable && block.title === "체중별 투여량") continue;
+    push(block);
+  }
+  return normalized.slice(0, 10);
 }
 
 function parseTableBlocks(html) {
@@ -586,14 +743,14 @@ function inferUsageHighlights(kind, parsed, plainText) {
   ].filter(Boolean).join("\n");
 
   const usable = uniqueSpeciesMatches(usableText, terms);
-  const unusable = uniqueSpeciesMatches(unusableText, terms).filter((term) => !usable.includes(term) || /금기|불가|금지|하지\s*말|제외/.test(unusableText));
+  const unusable = uniqueSpeciesMatches(unusableText, terms).filter((term) => !usable.includes(term));
   return { usable, unusable };
 }
 
 function parseGenericDetailHtml(html, sourceUrl) {
   const pairs = [];
   const seen = new Set();
-  const tableBlocks = parseTableBlocks(html);
+  const tableBlocks = normalizeTableBlocks(parseTableBlocks(html));
   const htmlWithoutTables = removeTablesForText(html);
 
   for (const row of parseRows(html)) {
@@ -617,7 +774,7 @@ function parseGenericDetailHtml(html, sourceUrl) {
     pairs: pairs.slice(0, 80),
     ingredientRows,
     sections,
-    tables: tableBlocks.slice(0, 10),
+    tables: tableBlocks,
     summary: pairs.length || tableBlocks.length || sections.length ? "" : summary
   };
   parsed._plainText = text;

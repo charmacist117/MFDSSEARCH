@@ -63,7 +63,8 @@ function baseSearchQueries(keyword) {
     { label: "제품명", query: { productName: keyword } },
     { label: "업체명", query: { companyName: keyword } },
     { label: "성분명", query: { ingredient1: keyword } },
-    { label: "효능효과", query: { efficacyOperator: "AND", efficacyQuery: keyword } }
+    { label: "효능효과", query: { efficacyOperator: "AND", efficacyQuery: keyword } },
+    { label: "주의사항", query: { precautionOperator: "AND", precautionQuery: keyword } }
   ];
 }
 
@@ -92,6 +93,7 @@ function externalSearchQueries(keyword) {
     { label: "제품명", query: { productName: keyword } },
     { label: "업체명", query: { companyName: keyword } },
     { label: "성분명", query: { ingredient1: keyword } },
+    { label: "주의사항", query: { precautionOperator: "AND", precautionQuery: keyword } },
     ...efficacyTerms(keyword).map((term) => ({
       label: "효능효과",
       searchTerm: term,

@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "category-compare-20260617-1";
+const API_VERSION = "filter-syntax-20260617-1";
 const HOME_PREVIEW_LIMIT = 3;
 let compareSlotSeed = 0;
 const compareState = {
@@ -216,7 +216,7 @@ function defaultCompareQuery(kind = compareState.kind) {
   return {
     efficacyOperator: "AND",
     dosageOperator: "AND",
-    ...(kind === "human" ? { precautionOperator: "AND" } : {})
+    precautionOperator: "AND"
   };
 }
 
@@ -688,6 +688,7 @@ function renderExternalCompareForm(slot) {
       </div>
       ${compareOperator(slot, "효능효과", "efficacyOperator", "efficacyQuery")}
       ${compareOperator(slot, "용법용량", "dosageOperator", "dosageQuery")}
+      ${compareOperator(slot, "주의사항", "precautionOperator", "precautionQuery")}
       ${
         isVet
           ? `<div class="date-block">
@@ -714,6 +715,7 @@ function renderExternalCompareForm(slot) {
         <button class="primary" type="submit">검색</button>
         <button class="secondary" type="button" data-compare-reset>초기화</button>
       </div>
+      ${renderSearchSyntaxHelp()}
     </form>
   `;
 }
@@ -927,6 +929,16 @@ function compareOperator(slot, label, operatorName, queryName) {
   `;
 }
 
+function renderSearchSyntaxHelp() {
+  return `
+    <div class="filter-help" tabindex="0">
+      <span class="help-dot">?</span>
+      <span># 값 있음 · $ 값 없음</span>
+      <div class="help-tooltip">검색 칸에 #만 입력하면 해당 칸에 값이 있는 항목만 찾고, $만 입력하면 해당 칸이 비어 있는 항목만 찾습니다.</div>
+    </div>
+  `;
+}
+
 function compareSegmented(slot, label, field, options) {
   return `
     <div class="control-row">
@@ -1038,6 +1050,7 @@ function renderCompareForm(slot) {
         <button class="primary" type="submit">검색</button>
         <button class="secondary" type="button" data-compare-reset>초기화</button>
       </div>
+      ${renderSearchSyntaxHelp()}
     </form>
   `;
 }

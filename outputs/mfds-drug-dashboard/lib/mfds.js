@@ -78,6 +78,97 @@ const DEFAULT_CRITERIA = {
   endPermitDate: ""
 };
 
+function isPresenceToken(value) {
+  const token = valueOf(value).trim();
+  return token === "#" || token === "$";
+}
+
+function normalSearchValue(value) {
+  return isPresenceToken(value) ? "" : valueOf(value);
+}
+
+function valueHasContent(value) {
+  if (Array.isArray(value)) return value.some(valueHasContent);
+  const text = String(value ?? "").trim();
+  return Boolean(text && text !== "-");
+}
+
+const HUMAN_PRESENCE_FIELDS = new Set([
+  "productName",
+  "productEngName",
+  "companyName",
+  "companyEngName",
+  "contractManufacturer",
+  "ingredient1",
+  "ingredient2",
+  "ingredient3",
+  "ingredient4",
+  "ingredient5",
+  "ingredientEngName",
+  "itemSeq",
+  "standardCode",
+  "atcCode",
+  "efficacyQuery",
+  "dosageQuery",
+  "precautionQuery"
+]);
+
+const HUMAN_DETAIL_PRESENCE_FIELDS = new Set([
+  "contractManufacturer",
+  "efficacyQuery",
+  "dosageQuery",
+  "precautionQuery"
+]);
+
+function extractHumanPresenceFilters(query = {}) {
+  return Object.keys(query)
+    .filter((field) => HUMAN_PRESENCE_FIELDS.has(field) && isPresenceToken(query[field]))
+    .map((field) => ({ field, mode: valueOf(query[field]).trim() }));
+}
+
+function ingredientPartCount(value) {
+  return String(value || "")
+    .split(/\s*[/,]\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean).length;
+}
+
+function humanFieldHasContent(item, field) {
+  if (/^ingredient[1-5]$/.test(field)) {
+    const index = Number(field.replace("ingredient", ""));
+    return ingredientPartCount(item.mainIngredient) >= index;
+  }
+  const fieldMap = {
+    productName: "itemName",
+    productEngName: "itemEngName",
+    companyName: "entpName",
+    companyEngName: "entpEngName",
+    contractManufacturer: "contractManufacturer",
+    ingredientEngName: "mainIngredientEng",
+    itemSeq: "itemSeq",
+    standardCode: "standardCode",
+    atcCode: "atcCode",
+    efficacyQuery: "efficacy",
+    dosageQuery: "dosage",
+    precautionQuery: "precautions"
+  };
+  return valueHasContent(item[fieldMap[field] || field]);
+}
+
+function applyHumanPresenceFilters(items, filters = []) {
+  if (!filters.length) return items;
+  return items.filter((item) =>
+    filters.every(({ field, mode }) => {
+      const hasContent = humanFieldHasContent(item, field);
+      return mode === "#" ? hasContent : !hasContent;
+    })
+  );
+}
+
+function presenceFiltersNeedDetail(filters = []) {
+  return filters.some(({ field }) => HUMAN_DETAIL_PRESENCE_FIELDS.has(field));
+}
+
 function buildQueryCacheKey(query = {}) {
   const normalized = { page: valueOf(query.page) || "1" };
   for (const key of Object.keys(query).sort()) {
@@ -91,32 +182,32 @@ function buildQueryCacheKey(query = {}) {
 function buildSearchCriteria(query = {}) {
   return {
     ...DEFAULT_CRITERIA,
-    sort: valueOf(query.sort),
-    sortOrder: valueOf(query.sortOrder) || "false",
-    page: valueOf(query.page) || "1",
-    itemName: valueOf(query.productName),
-    itemEngName: valueOf(query.productEngName),
-    entpName: valueOf(query.companyName),
-    entpEngName: valueOf(query.companyEngName),
-    ingrName1: valueOf(query.ingredient1),
-    ingrName2: valueOf(query.ingredient2),
-    ingrName3: valueOf(query.ingredient3),
-    ingrEngName: valueOf(query.ingredientEngName),
-    itemSeq: valueOf(query.itemSeq),
-    stdrCodeName: valueOf(query.standardCode),
-    atcCodeName: valueOf(query.atcCode),
-    indutyClassCode: valueOf(query.itemCategory),
-    cancelCode: valueOf(query.cancelStatus),
-    etcOtcCode: valueOf(query.etcOtc),
-    makeMaterialGb: valueOf(query.makeMaterial),
-    searchConEe: valueOf(query.efficacyOperator) || "AND",
-    eeDocData: valueOf(query.efficacyQuery),
-    searchConUd: valueOf(query.dosageOperator) || "AND",
-    udDocData: valueOf(query.dosageQuery),
-    searchConNb: valueOf(query.precautionOperator) || "AND",
-    nbDocData: valueOf(query.precautionQuery),
-    startPermitDate: valueOf(query.permitStart),
-    endPermitDate: valueOf(query.permitEnd)
+    sort: normalSearchValue(query.sort),
+    sortOrder: normalSearchValue(query.sortOrder) || "false",
+    page: normalSearchValue(query.page) || "1",
+    itemName: normalSearchValue(query.productName),
+    itemEngName: normalSearchValue(query.productEngName),
+    entpName: normalSearchValue(query.companyName),
+    entpEngName: normalSearchValue(query.companyEngName),
+    ingrName1: normalSearchValue(query.ingredient1),
+    ingrName2: normalSearchValue(query.ingredient2),
+    ingrName3: normalSearchValue(query.ingredient3),
+    ingrEngName: normalSearchValue(query.ingredientEngName),
+    itemSeq: normalSearchValue(query.itemSeq),
+    stdrCodeName: normalSearchValue(query.standardCode),
+    atcCodeName: normalSearchValue(query.atcCode),
+    indutyClassCode: normalSearchValue(query.itemCategory),
+    cancelCode: normalSearchValue(query.cancelStatus),
+    etcOtcCode: normalSearchValue(query.etcOtc),
+    makeMaterialGb: normalSearchValue(query.makeMaterial),
+    searchConEe: normalSearchValue(query.efficacyOperator) || "AND",
+    eeDocData: normalSearchValue(query.efficacyQuery),
+    searchConUd: normalSearchValue(query.dosageOperator) || "AND",
+    udDocData: normalSearchValue(query.dosageQuery),
+    searchConNb: normalSearchValue(query.precautionOperator) || "AND",
+    nbDocData: normalSearchValue(query.precautionQuery),
+    startPermitDate: normalSearchValue(query.permitStart),
+    endPermitDate: normalSearchValue(query.permitEnd)
   };
 }
 
@@ -279,7 +370,10 @@ function mergeListDetail(item, detail) {
     unitDose: detail.unitDose || item.unitDose || "",
     standardCode: detail.standardCode || item.standardCode || "",
     atcCode: detail.atcCode || item.atcCode || "",
-    performance: detail.performance || item.performance || null
+    performance: detail.performance || item.performance || null,
+    efficacy: detail.efficacy || item.efficacy || "",
+    dosage: detail.dosage || item.dosage || "",
+    precautions: detail.precautions || item.precautions || ""
   };
 }
 
@@ -288,6 +382,8 @@ function contractSearchMatches(item, contractManufacturer) {
 }
 
 function filterExtraIngredients(items, ingredient4, ingredient5) {
+  ingredient4 = normalSearchValue(ingredient4);
+  ingredient5 = normalSearchValue(ingredient5);
   if (!ingredient4 && !ingredient5) return items;
   return items.filter((item) => {
     const src = item.mainIngredient || "";
@@ -295,6 +391,27 @@ function filterExtraIngredients(items, ingredient4, ingredient5) {
     if (ingredient5 && !includesText(src, ingredient5)) return false;
     return true;
   });
+}
+
+async function enrichItemsWithDetails(items, detailOptions = {}) {
+  const concurrency = Math.max(Number(detailOptions.concurrency || 4), 1);
+  const deadlineAt = Number(detailOptions.deadlineAt || 0);
+  let timedOut = false;
+  const detailed = await mapConcurrent(items, concurrency, async (item) => {
+    if (deadlineAt && Date.now() > deadlineAt) {
+      timedOut = true;
+      return item;
+    }
+    const cachedDetail = detailMemoryCache.get(String(item.itemSeq));
+    if (cachedDetail) return mergeListDetail(item, cachedDetail);
+    try {
+      const detail = await getMfdsDetail(item.itemSeq, detailOptions);
+      return mergeListDetail(item, detail);
+    } catch {
+      return item;
+    }
+  });
+  return { items: detailed, timedOut };
 }
 
 
@@ -649,9 +766,10 @@ async function enrichContractCandidates(items, contractManufacturer, detailOptio
 }
 
 async function searchMfdsByContractManufacturer(query, page, cacheKey) {
-  const contractManufacturer = valueOf(query.contractManufacturer);
-  const ingredient4 = valueOf(query.ingredient4);
-  const ingredient5 = valueOf(query.ingredient5);
+  const contractManufacturer = normalSearchValue(query.contractManufacturer);
+  const ingredient4 = normalSearchValue(query.ingredient4);
+  const ingredient5 = normalSearchValue(query.ingredient5);
+  const presenceFilters = extractHumanPresenceFilters(query);
   const searchStartedAt = Date.now();
   const budgetMs = Math.max(Number(valueOf(query.contractBudgetMs) || 8000), 3500);
   const nativeQuery = {
@@ -703,6 +821,12 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
     total = items.length;
     notice = `${notice} 성분명4/5는 후보 결과 안에서 추가 필터링했습니다.`;
   }
+  const presenceFilteredItems = applyHumanPresenceFilters(items, presenceFilters);
+  if (presenceFilteredItems.length !== items.length) {
+    items = presenceFilteredItems;
+    total = items.length;
+    notice = `${notice} #/$ 조건은 현재 확인된 후보 결과 안에서 적용했습니다.`;
+  }
 
   const pageSize = items.length || parsed.items.length || 10;
   return searchMemoryCache.set(cacheKey, {
@@ -721,8 +845,9 @@ async function searchMfds(query = {}) {
   const cacheKey = buildQueryCacheKey({ ...query, page });
   const cached = searchMemoryCache.get(cacheKey);
   if (cached) return cached;
+  const presenceFilters = extractHumanPresenceFilters(query);
 
-  if (valueOf(query.contractManufacturer)) {
+  if (normalSearchValue(query.contractManufacturer)) {
     return searchMfdsByContractManufacturer(query, page, cacheKey);
   }
 
@@ -735,13 +860,38 @@ async function searchMfds(query = {}) {
   let items = parsed.items;
   let total = parsed.total;
   let notice = "";
-  const ingredient4 = valueOf(query.ingredient4);
-  const ingredient5 = valueOf(query.ingredient5);
+  const ingredient4 = normalSearchValue(query.ingredient4);
+  const ingredient5 = normalSearchValue(query.ingredient5);
 
   if (ingredient4 || ingredient5) {
     items = filterExtraIngredients(items, ingredient4, ingredient5);
     total = items.length;
     if (!notice) notice = "성분명4/5 검색은 현재 페이지 주성분 텍스트 기준으로 필터링됩니다.";
+  }
+  if (presenceFilters.length) {
+    if (presenceFiltersNeedDetail(presenceFilters)) {
+      const enrichStartedAt = Date.now();
+      const budgetMs = Math.max(Number(valueOf(query.contractBudgetMs) || 8000), 3500);
+      const enriched = await enrichItemsWithDetails(items, {
+        retries: Number(valueOf(query.detailRetries) || 1),
+        timeoutMs: Number(valueOf(query.detailTimeoutMs) || 2200),
+        fallbackOnFetchError: valueOf(query.detailFallback) === "1",
+        concurrency: Number(valueOf(query.detailConcurrency) || 4),
+        deadlineAt: enrichStartedAt + budgetMs
+      });
+      items = enriched.items;
+      if (enriched.timedOut) {
+        notice = `${notice ? `${notice} ` : ""}#/$ 상세 필드 확인 중 일부 항목은 시간이 초과되어 목록 값 기준으로 표시했습니다.`;
+      }
+    }
+    const beforeCount = items.length;
+    items = applyHumanPresenceFilters(items, presenceFilters);
+    total = items.length;
+    if (!notice) {
+      notice = "#/$ 조건은 현재 조회된 목록에서 값 있음/값 없음 기준으로 적용했습니다.";
+    } else if (beforeCount !== items.length) {
+      notice = `${notice} #/$ 조건을 추가 적용했습니다.`;
+    }
   }
 
   const pageSize = items.length || parsed.items.length || 10;
