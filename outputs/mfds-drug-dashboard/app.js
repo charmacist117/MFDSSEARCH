@@ -53,8 +53,21 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "filter-syntax-20260617-1";
+const API_VERSION = "review-type-contract-20260617-1";
 const HOME_PREVIEW_LIMIT = 3;
+const REVIEW_TYPE_OPTIONS = [
+  "자료제출의약품",
+  "자료제출의약품(유전자재조합의약품 및 세포배양의약품)",
+  "신약",
+  "개량신약",
+  "희귀의약품",
+  "표준제조기준",
+  "안전성·유효성 심사대상",
+  "생물학적동등성시험대상",
+  "원료의약품",
+  "수출용의약품",
+  "한약(생약)제제"
+];
 let compareSlotSeed = 0;
 const compareState = {
   kind: "human",
@@ -109,6 +122,32 @@ function selectedRow() {
 
 function selectedDrug() {
   return state.detailCache[state.selectedSeq] || selectedRow();
+}
+
+function collectReviewTypes() {
+  const values = new Set(REVIEW_TYPE_OPTIONS);
+  state.rows.forEach((row) => {
+    const drug = rowWithCachedDetail(row);
+    if (drug.reviewType) values.add(drug.reviewType);
+  });
+  compareState.slots.forEach((slot) => {
+    slot.rows.forEach((row) => {
+      const drug = slot.detailCache[row.itemSeq] ? mergeKeepNonEmpty(row, slot.detailCache[row.itemSeq]) : row;
+      if (drug.reviewType) values.add(drug.reviewType);
+    });
+  });
+  return Array.from(values).filter(Boolean).sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+function populateReviewTypeSelects() {
+  const options = collectReviewTypes();
+  document.querySelectorAll("[data-review-type-select]").forEach((select) => {
+    const selected = select.value;
+    select.innerHTML = `<option value="">전체</option>${options
+      .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
+      .join("")}`;
+    select.value = options.includes(selected) ? selected : "";
+  });
 }
 
 function mergeKeepNonEmpty(base, overlay) {
@@ -186,7 +225,7 @@ function formatPerformanceYearCell(performance, year) {
 function buildSearchParams() {
   const values = Object.fromEntries(new FormData(form).entries());
   const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page), _v: API_VERSION });
-  if (params.get("contractManufacturer")) {
+  if (params.get("contractManufacturer") || params.get("reviewType")) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "1");
@@ -282,7 +321,7 @@ function syncCompareQueryFromForm(slot, formEl) {
 
 function compactParams(values, filters, page) {
   const params = new URLSearchParams({ ...values, ...filters, page: String(page), _v: API_VERSION });
-  if (params.get("contractManufacturer")) {
+  if (params.get("contractManufacturer") || params.get("reviewType")) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "1");
@@ -915,6 +954,21 @@ function compareInput(slot, label, name, type = "text") {
   `;
 }
 
+function compareReviewTypeSelect(slot) {
+  const options = collectReviewTypes();
+  return `
+    <label>
+      <span>허가심사유형</span>
+      <select name="reviewType" data-review-type-select>
+        <option value="">전체</option>
+        ${options
+          .map((value) => `<option value="${escapeHtml(value)}" ${slot.query.reviewType === value ? "selected" : ""}>${escapeHtml(value)}</option>`)
+          .join("")}
+      </select>
+    </label>
+  `;
+}
+
 function compareOperator(slot, label, operatorName, queryName) {
   const operator = slot.query[operatorName] || "AND";
   return `
@@ -984,6 +1038,7 @@ function renderCompareForm(slot) {
       ${compareInput(slot, "업체명", "companyName")}
       ${compareInput(slot, "업체영문명", "companyEngName")}
       ${compareInput(slot, "위탁제조업체", "contractManufacturer")}
+      ${compareReviewTypeSelect(slot)}
       ${compareInput(slot, "성분명1", "ingredient1")}
       ${compareInput(slot, "성분명2", "ingredient2")}
       ${compareInput(slot, "성분명3", "ingredient3")}
@@ -1871,13 +1926,13 @@ function renderResults() {
   statusText.textContent = state.listLoading ? "목록을 불러오는 중" : state.error || state.notice || "MFDS 실시간 목록";
 
   const perfYears = getPerformanceYears();
-  const totalCols = 8 + perfYears.length;
+  const totalCols = 9 + perfYears.length;
 
   // Dynamic header rendering
   const theadRow = document.querySelector(".result-table thead tr");
   if (theadRow) {
-    const baseHeaders = ["제품명", "업체명", "주성분", "단위용량", "전문/일반", "허가일", "ATC", "위탁제조업체"];
-    const BASE_WIDTHS = [200, 110, 180, 170, 80, 90, 90, 130];
+    const baseHeaders = ["제품명", "업체명", "주성분", "단위용량", "전문/일반", "허가일", "ATC", "위탁제조업체", "허가심사유형"];
+    const BASE_WIDTHS = [200, 110, 180, 170, 80, 90, 90, 130, 180];
     let thHtml = "";
     baseHeaders.forEach((h, i) => {
       const width = state.columnWidths[h] || BASE_WIDTHS[i];
@@ -1948,6 +2003,7 @@ function renderResults() {
           <td>${escapeHtml(drug.permitDate || "-")}</td>
           <td>${escapeHtml(drug.atcCode || "-")}</td>
           <td>${escapeHtml(drug.contractManufacturer || "-")}</td>
+          <td>${escapeHtml(drug.reviewType || "-")}</td>
           ${perfCellsHtml}
         </tr>
       `;
@@ -2140,6 +2196,7 @@ function renderDetail() {
 function render() {
   renderResults();
   renderDetail();
+  populateReviewTypeSelects();
 }
 
 const downloadedFilenames = new Set();
@@ -2217,6 +2274,7 @@ function downloadCsvClientSide(category = "human") {
       ["entpName", "업체명"],
       ["entpEngName", "업체영문명"],
       ["contractManufacturer", "위탁제조업체"],
+      ["reviewType", "허가심사유형"],
       ["mainIngredient", "주성분"],
       ["unitDose", "단위용량"],
       ["etcOtc", "전문/일반"],
@@ -2999,6 +3057,7 @@ function initCollapsible(toggleId, wrapId) {
 initCollapsible("#extraIngredientToggle", "#extraIngredientWrap");
 initCollapsible("#extraIngredientToggleVet", "#extraIngredientWrapVet");
 initCollapsible("#extraIngredientToggleAquatic", "#extraIngredientWrapAquatic");
+populateReviewTypeSelects();
 
 /* ── Draggable layout splitter ── */
 

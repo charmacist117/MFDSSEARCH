@@ -99,6 +99,7 @@ const HUMAN_PRESENCE_FIELDS = new Set([
   "companyName",
   "companyEngName",
   "contractManufacturer",
+  "reviewType",
   "ingredient1",
   "ingredient2",
   "ingredient3",
@@ -115,6 +116,7 @@ const HUMAN_PRESENCE_FIELDS = new Set([
 
 const HUMAN_DETAIL_PRESENCE_FIELDS = new Set([
   "contractManufacturer",
+  "reviewType",
   "efficacyQuery",
   "dosageQuery",
   "precautionQuery"
@@ -144,6 +146,7 @@ function humanFieldHasContent(item, field) {
     companyName: "entpName",
     companyEngName: "entpEngName",
     contractManufacturer: "contractManufacturer",
+    reviewType: "reviewType",
     ingredientEngName: "mainIngredientEng",
     itemSeq: "itemSeq",
     standardCode: "standardCode",
@@ -357,6 +360,7 @@ function cleanText(html) {
 function stripDerivedSearchFields(query = {}) {
   const clean = { ...query };
   delete clean.contractManufacturer;
+  delete clean.reviewType;
   delete clean.ingredient4;
   delete clean.ingredient5;
   return clean;
@@ -370,6 +374,7 @@ function mergeListDetail(item, detail) {
     unitDose: detail.unitDose || item.unitDose || "",
     standardCode: detail.standardCode || item.standardCode || "",
     atcCode: detail.atcCode || item.atcCode || "",
+    reviewType: detail.reviewType || item.reviewType || "",
     performance: detail.performance || item.performance || null,
     efficacy: detail.efficacy || item.efficacy || "",
     dosage: detail.dosage || item.dosage || "",
@@ -379,6 +384,10 @@ function mergeListDetail(item, detail) {
 
 function contractSearchMatches(item, contractManufacturer) {
   return includesText(item.contractManufacturer, contractManufacturer);
+}
+
+function reviewTypeMatches(item, reviewType) {
+  return includesText(item.reviewType, reviewType, true);
 }
 
 function filterExtraIngredients(items, ingredient4, ingredient5) {
@@ -447,6 +456,82 @@ function parseTables(sectionHtml) {
   return tables;
 }
 
+const DETAIL_LABELS = [
+  "제품명",
+  "성상",
+  "모양",
+  "업체명",
+  "위탁제조업체",
+  "전문/일반",
+  "허가일",
+  "품목기준코드",
+  "표준코드",
+  "허가번호",
+  "허가심사유형",
+  "품목구분",
+  "완제/원료",
+  "제조/수입",
+  "취소/취하구분",
+  "취소/취하",
+  "취소취하구분",
+  "취소/취하일자",
+  "취소취하일자",
+  "저장방법",
+  "사용기간",
+  "재심사대상",
+  "RMP대상",
+  "포장정보",
+  "보험약가",
+  "ATC코드"
+];
+
+function normalizedDetailText(sectionHtml) {
+  return decodeEntities(stripScripts(sectionHtml)
+    .replace(/<span\b[^>]*class=["'][^"']*s-th[^"']*["'][^>]*>[\s\S]*?<\/span>/gi, "")
+    .replace(/<(br|tr|li|dt|dd|th|td|p|div|h[1-6])\b[^>]*>/gi, "\n")
+    .replace(/<\/(tr|li|dt|dd|th|td|p|div|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t\r\f\v]+/g, " ")
+    .replace(/\n\s+/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim());
+}
+
+function parseKnownLabelValues(sectionHtml) {
+  const lines = normalizedDetailText(sectionHtml)
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const labelSet = new Set(DETAIL_LABELS.map((label) => label.replace(/\s+/g, "")));
+  const result = {};
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const normalized = lines[index].replace(/\s+/g, "");
+    if (!labelSet.has(normalized)) continue;
+    const parts = [];
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const nextNormalized = lines[next].replace(/\s+/g, "");
+      if (labelSet.has(nextNormalized)) break;
+      parts.push(lines[next]);
+    }
+    const value = parts.join(" ").trim();
+    if (value && !result[normalized]) result[normalized] = value;
+  }
+
+  const flat = lines.join(" ");
+  const labelAlternatives = DETAIL_LABELS.map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  for (const label of DETAIL_LABELS) {
+    const normalizedLabel = label.replace(/\s+/g, "");
+    if (result[normalizedLabel]) continue;
+    const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`${escapedLabel}\\s*[:：|]?\\s*(.*?)(?=\\s*(?:${labelAlternatives})\\s*[:：|]?|$)`);
+    const match = pattern.exec(flat);
+    if (match?.[1]?.trim()) result[normalizedLabel] = match[1].trim();
+  }
+
+  return result;
+}
+
 function parseKeyValueRows(sectionHtml) {
   const values = {};
   for (const table of parseTables(sectionHtml)) {
@@ -458,7 +543,25 @@ function parseKeyValueRows(sectionHtml) {
       }
     }
   }
+  const dtDdRe = /<dt\b[^>]*>([\s\S]*?)<\/dt>\s*<dd\b[^>]*>([\s\S]*?)<\/dd>/gi;
+  let dtDd;
+  while ((dtDd = dtDdRe.exec(sectionHtml))) {
+    const key = cleanText(dtDd[1]).replace(/\s+/g, "");
+    const value = cleanText(dtDd[2]);
+    if (key && value && !values[key]) values[key] = value;
+  }
+  for (const [key, value] of Object.entries(parseKnownLabelValues(sectionHtml))) {
+    const normalizedKey = key.replace(/\s+/g, "");
+    if (normalizedKey && value && !values[normalizedKey]) values[normalizedKey] = value;
+  }
   return values;
+}
+
+function findElementIdIndex(html, id, fromIndex = 0) {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`\\bid\\s*=\\s*(['"])${escaped}\\1`, "i");
+  const match = pattern.exec(String(html || "").slice(fromIndex));
+  return match ? fromIndex + match.index : -1;
 }
 
 function firstValue(source, keys = [], fallback = "") {
@@ -540,18 +643,18 @@ function parseSearchHtml(html) {
 }
 
 function extractSection(html, id, nextId) {
-  const start = html.indexOf(`id="${id}"`);
+  const start = findElementIdIndex(html, id);
   if (start < 0) return "";
   const elementStart = html.lastIndexOf("<div", start);
   const exactElement = extractElementById(html, id);
   if (exactElement) return exactElement;
-  const next = nextId ? html.indexOf(`id="${nextId}"`, start + 1) : -1;
+  const next = nextId ? findElementIdIndex(html, nextId, start + 1) : -1;
   if (next > 0) return html.slice(elementStart, html.lastIndexOf("<div", next));
   return html.slice(elementStart);
 }
 
 function extractElementById(html, id) {
-  const idIndex = html.indexOf(`id="${id}"`);
+  const idIndex = findElementIdIndex(html, id);
   if (idIndex < 0) return "";
   const start = html.lastIndexOf("<div", idIndex);
   if (start < 0) return "";
@@ -767,6 +870,7 @@ async function enrichContractCandidates(items, contractManufacturer, detailOptio
 
 async function searchMfdsByContractManufacturer(query, page, cacheKey) {
   const contractManufacturer = normalSearchValue(query.contractManufacturer);
+  const reviewType = normalSearchValue(query.reviewType);
   const ingredient4 = normalSearchValue(query.ingredient4);
   const ingredient5 = normalSearchValue(query.ingredient5);
   const presenceFilters = extractHumanPresenceFilters(query);
@@ -827,6 +931,14 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
     total = items.length;
     notice = `${notice} #/$ 조건은 현재 확인된 후보 결과 안에서 적용했습니다.`;
   }
+  if (reviewType) {
+    const reviewFilteredItems = items.filter((item) => reviewTypeMatches(item, reviewType));
+    if (reviewFilteredItems.length !== items.length) {
+      items = reviewFilteredItems;
+      total = items.length;
+      notice = `${notice} 허가심사유형 조건을 추가 적용했습니다.`;
+    }
+  }
 
   const pageSize = items.length || parsed.items.length || 10;
   return searchMemoryCache.set(cacheKey, {
@@ -862,14 +974,15 @@ async function searchMfds(query = {}) {
   let notice = "";
   const ingredient4 = normalSearchValue(query.ingredient4);
   const ingredient5 = normalSearchValue(query.ingredient5);
+  const reviewType = normalSearchValue(query.reviewType);
 
   if (ingredient4 || ingredient5) {
     items = filterExtraIngredients(items, ingredient4, ingredient5);
     total = items.length;
     if (!notice) notice = "성분명4/5 검색은 현재 페이지 주성분 텍스트 기준으로 필터링됩니다.";
   }
-  if (presenceFilters.length) {
-    if (presenceFiltersNeedDetail(presenceFilters)) {
+  if (presenceFilters.length || reviewType) {
+    if (presenceFiltersNeedDetail(presenceFilters) || reviewType) {
       const enrichStartedAt = Date.now();
       const budgetMs = Math.max(Number(valueOf(query.contractBudgetMs) || 8000), 3500);
       const enriched = await enrichItemsWithDetails(items, {
@@ -884,13 +997,25 @@ async function searchMfds(query = {}) {
         notice = `${notice ? `${notice} ` : ""}#/$ 상세 필드 확인 중 일부 항목은 시간이 초과되어 목록 값 기준으로 표시했습니다.`;
       }
     }
+    if (presenceFilters.length) {
+      const beforeCount = items.length;
+      items = applyHumanPresenceFilters(items, presenceFilters);
+      total = items.length;
+      if (!notice) {
+        notice = "#/$ 조건은 현재 조회된 목록에서 값 있음/값 없음 기준으로 적용했습니다.";
+      } else if (beforeCount !== items.length) {
+        notice = `${notice} #/$ 조건을 추가 적용했습니다.`;
+      }
+    }
+  }
+  if (reviewType) {
     const beforeCount = items.length;
-    items = applyHumanPresenceFilters(items, presenceFilters);
+    items = items.filter((item) => reviewTypeMatches(item, reviewType));
     total = items.length;
     if (!notice) {
-      notice = "#/$ 조건은 현재 조회된 목록에서 값 있음/값 없음 기준으로 적용했습니다.";
+      notice = "허가심사유형은 상세정보를 확인한 뒤 현재 조회된 목록에서 필터링됩니다.";
     } else if (beforeCount !== items.length) {
-      notice = `${notice} #/$ 조건을 추가 적용했습니다.`;
+      notice = `${notice} 허가심사유형 조건을 추가 적용했습니다.`;
     }
   }
 
@@ -933,6 +1058,7 @@ async function getMfdsDetailsBatch(itemSeqs = [], concurrency = 5) {
         itemName: detail.itemName || "",
         entpName: detail.entpName || "",
         contractManufacturer: detail.contractManufacturer || "",
+        reviewType: detail.reviewType || "",
         mainIngredient: detail.mainIngredient || "",
         unitDose: detail.unitDose || "",
         etcOtc: detail.etcOtc || "",
@@ -1055,6 +1181,7 @@ async function generateMfdsCsv(query, cache = {}) {
     ["entpName", "업체명"],
     ["entpEngName", "업체영문명"],
     ["contractManufacturer", "위탁제조업체"],
+    ["reviewType", "허가심사유형"],
     ["etcOtc", "전문/일반"],
     ["permitDate", "허가일"],
     ["itemCategory", "품목구분"],
