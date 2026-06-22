@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "neon-export-filter-20260622-1";
+const API_VERSION = "neon-export-toggle-20260622-2";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -222,8 +222,17 @@ function formatPerformanceYearCell(performance, year) {
   `;
 }
 
+function withExportOnlyMode(values, root) {
+  const box = root?.querySelector?.('[data-export-only-mode][name="exportOnlyMode"]');
+  if (!box) return values;
+  return {
+    ...values,
+    exportOnlyMode: box.checked ? "include" : "exclude"
+  };
+}
+
 function buildSearchParams() {
-  const values = Object.fromEntries(new FormData(form).entries());
+  const values = withExportOnlyMode(Object.fromEntries(new FormData(form).entries()), form);
   const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page), _v: API_VERSION });
   if (params.get("contractManufacturer") || params.get("reviewType") || ["exclude", "only"].includes(params.get("exportOnlyMode"))) {
     params.set("timeoutMs", "6500");
@@ -315,7 +324,7 @@ function syncCompareQueryFromForm(slot, formEl) {
   if (!slot || !formEl) return;
   slot.query = {
     ...defaultCompareQuery(slot.kind),
-    ...Object.fromEntries(new FormData(formEl).entries())
+    ...withExportOnlyMode(Object.fromEntries(new FormData(formEl).entries()), formEl)
   };
 }
 
@@ -973,14 +982,10 @@ function compareExportOnlyMode(slot) {
   const mode = slot.query.exportOnlyMode || "include";
   return `
     <div class="control-row checkbox-row export-only-row">
-      <span>수출용</span>
+      <span>&#49688;&#52636;&#50857;</span>
       <label>
         <input type="checkbox" name="exportOnlyMode" value="include" data-export-only-mode ${mode !== "exclude" && mode !== "only" ? "checked" : ""}>
-        포함
-      </label>
-      <label>
-        <input type="checkbox" name="exportOnlyMode" value="exclude" data-export-only-mode ${mode === "exclude" ? "checked" : ""}>
-        불포함
+        &#54252;&#54632;
       </label>
     </div>
   `;
@@ -1265,6 +1270,7 @@ function handleExportOnlyModeChange(target) {
   const group = target.closest(".export-only-row");
   if (!group) return;
   const boxes = Array.from(group.querySelectorAll("[data-export-only-mode]"));
+  if (boxes.length <= 1) return;
   if (target.checked) {
     boxes.forEach((box) => {
       if (box !== target) box.checked = false;
