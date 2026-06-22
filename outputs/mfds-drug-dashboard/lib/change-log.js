@@ -1,8 +1,8 @@
-const fs = require("node:fs");
 const path = require("node:path");
 const { searchMfds } = require("./mfds");
 const { searchVetMedicines } = require("./public-medicines");
 const { mapConcurrent, MemoryCache } = require("./utils");
+const { readJsonFileSync, readJsonStore } = require("./change-storage");
 
 const CATEGORY_LABELS = {
   human: "인체용 의약품",
@@ -30,6 +30,8 @@ function changeLogPath() {
 function emptyLog() {
   return {
     updatedAt: "",
+    snapshotDate: "",
+    snapshots: {},
     changes: {
       human: [],
       vet: [],
@@ -38,20 +40,28 @@ function emptyLog() {
   };
 }
 
+function normalizeLog(parsed = {}) {
+  const base = emptyLog();
+  return {
+    ...base,
+    ...parsed,
+    snapshots: {
+      ...base.snapshots,
+      ...(parsed.snapshots || {})
+    },
+    changes: {
+      ...base.changes,
+      ...(parsed.changes || {})
+    }
+  };
+}
+
 function readChangeLog() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(changeLogPath(), "utf8"));
-    return {
-      ...emptyLog(),
-      ...parsed,
-      changes: {
-        ...emptyLog().changes,
-        ...(parsed.changes || {})
-      }
-    };
-  } catch {
-    return emptyLog();
-  }
+  return normalizeLog(readJsonFileSync(changeLogPath(), emptyLog()));
+}
+
+async function readStoredChangeLog() {
+  return normalizeLog(await readJsonStore("change-log", changeLogPath(), emptyLog()));
 }
 
 
@@ -215,7 +225,7 @@ async function liveVetChanges(days = DEFAULT_RECENT_DAYS) {
 
 async function changesForCategory(category = "human", options = {}) {
   const key = CATEGORY_LABELS[category] ? category : "human";
-  const log = readChangeLog();
+  const log = await readStoredChangeLog();
   let live = { changes: [], updatedAt: "" };
   const includeLive = options.live === true || options.live === "1";
   if (includeLive && key === "human") {
@@ -273,6 +283,7 @@ module.exports = {
   CATEGORY_LABELS,
   CHANGE_LABELS,
   readChangeLog,
+  readStoredChangeLog,
   changesForCategory,
   changesCsv
 };

@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -6,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const { searchMfds, getMfdsDetail } = require("../lib/mfds.js");
 const { searchVetMedicines, searchAquaticMedicines } = require("../lib/public-medicines.js");
+const { isNeonConfigured, isKvConfigured, readJsonStore, writeJsonStore } = require("../lib/change-storage.js");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = process.env.CHANGELOG_DATA_DIR || path.join(root, "data");
@@ -175,17 +175,20 @@ async function hydrateHumanRemovalDetails(items, { maxDetails = 250, concurrency
   });
 }
 
+function storeKeyForFile(file) {
+  const relative = path.relative(dataDir, file).replaceAll("\\", "/");
+  if (relative === "change-log.json") return "change-log";
+  const snapshot = relative.match(/^snapshots\/(.+)\.json$/);
+  if (snapshot) return `snapshot:${snapshot[1]}`;
+  return relative.replace(/\.json$/i, "").replaceAll("/", ":");
+}
+
 async function readJson(file, fallback) {
-  try {
-    return JSON.parse(await fs.readFile(file, "utf8"));
-  } catch {
-    return fallback;
-  }
+  return readJsonStore(storeKeyForFile(file), file, fallback);
 }
 
 async function writeJson(file, value) {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  return writeJsonStore(storeKeyForFile(file), file, value);
 }
 
 function entry(date, category, type, item, note = "") {
@@ -277,6 +280,12 @@ async function main() {
   const log = await readJson(changeLogFile, { updatedAt: "", snapshotDate: "", snapshots: {}, changes: { human: [], vet: [], aquatic: [] } });
   log.changes = { human: [], vet: [], aquatic: [], ...(log.changes || {}) };
   log.snapshots = { ...(log.snapshots || {}) };
+  const storageLabel = isNeonConfigured()
+    ? "Neon Postgres"
+    : isKvConfigured()
+      ? "Vercel KV / Upstash Redis"
+      : "local JSON files";
+  console.log(`change-log storage: ${storageLabel}`);
 
   for (const category of targetCategories) {
     if (!categories.includes(category)) continue;

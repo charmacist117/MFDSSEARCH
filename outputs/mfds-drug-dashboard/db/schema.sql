@@ -42,3 +42,39 @@ create index if not exists mfds_drugs_entp_name_idx on mfds_drugs using gin (ent
 create index if not exists mfds_drugs_search_vector_idx on mfds_drugs using gin (search_vector);
 create index if not exists mfds_drugs_atc_code_idx on mfds_drugs (atc_code);
 create index if not exists mfds_drugs_permit_date_idx on mfds_drugs (permit_date);
+
+create table if not exists medicine_storage (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists medicine_snapshots (
+  category text primary key,
+  snapshot_date date,
+  change_date date,
+  item_count integer not null default 0,
+  payload jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists medicine_changes (
+  category text not null,
+  change_date date not null,
+  change_type text not null,
+  item_id text not null,
+  name text,
+  company text,
+  status text,
+  permit_date date,
+  cancel_date date,
+  permit_number text,
+  product_code text,
+  note text,
+  payload jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  primary key (category, change_date, change_type, item_id)
+);
+
+create index if not exists medicine_changes_category_date_idx on medicine_changes (category, change_date desc);
+create index if not exists medicine_changes_type_idx on medicine_changes (change_type);

@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>의약품 상세정보 대시보드</title>
-    <link rel="stylesheet" href="./styles.css?v=11">
+    <link rel="stylesheet" href="./styles.css?v=12">
   </head>
   <body>
     <nav class="category-tabs" aria-label="의약품 분류 선택">
@@ -71,6 +71,17 @@
                 <option value="">전체</option>
               </select>
             </label>
+            <div class="control-row checkbox-row export-only-row">
+              <span>???</span>
+              <label>
+                <input type="checkbox" name="exportOnlyMode" value="include" data-export-only-mode checked>
+                ??
+              </label>
+              <label>
+                <input type="checkbox" name="exportOnlyMode" value="exclude" data-export-only-mode>
+                ???
+              </label>
+            </div>
             <label>
               <span>성분명1</span>
               <input name="ingredient1" autocomplete="off">
@@ -579,6 +590,6 @@
       </div>
     </div>
 
-    <script src="./app.js?v=28"></script>
+    <script src="./app.js?v=29"></script>
   </body>
 </html>

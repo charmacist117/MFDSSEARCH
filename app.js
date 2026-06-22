@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "review-type-contract-20260617-1";
+const API_VERSION = "neon-export-filter-20260622-1";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -225,7 +225,7 @@ function formatPerformanceYearCell(performance, year) {
 function buildSearchParams() {
   const values = Object.fromEntries(new FormData(form).entries());
   const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page), _v: API_VERSION });
-  if (params.get("contractManufacturer") || params.get("reviewType")) {
+  if (params.get("contractManufacturer") || params.get("reviewType") || ["exclude", "only"].includes(params.get("exportOnlyMode"))) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "1");
@@ -321,7 +321,7 @@ function syncCompareQueryFromForm(slot, formEl) {
 
 function compactParams(values, filters, page) {
   const params = new URLSearchParams({ ...values, ...filters, page: String(page), _v: API_VERSION });
-  if (params.get("contractManufacturer") || params.get("reviewType")) {
+  if (params.get("contractManufacturer") || params.get("reviewType") || ["exclude", "only"].includes(params.get("exportOnlyMode"))) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "1");
@@ -969,6 +969,23 @@ function compareReviewTypeSelect(slot) {
   `;
 }
 
+function compareExportOnlyMode(slot) {
+  const mode = slot.query.exportOnlyMode || "include";
+  return `
+    <div class="control-row checkbox-row export-only-row">
+      <span>수출용</span>
+      <label>
+        <input type="checkbox" name="exportOnlyMode" value="include" data-export-only-mode ${mode !== "exclude" && mode !== "only" ? "checked" : ""}>
+        포함
+      </label>
+      <label>
+        <input type="checkbox" name="exportOnlyMode" value="exclude" data-export-only-mode ${mode === "exclude" ? "checked" : ""}>
+        불포함
+      </label>
+    </div>
+  `;
+}
+
 function compareOperator(slot, label, operatorName, queryName) {
   const operator = slot.query[operatorName] || "AND";
   return `
@@ -1039,6 +1056,7 @@ function renderCompareForm(slot) {
       ${compareInput(slot, "업체영문명", "companyEngName")}
       ${compareInput(slot, "위탁제조업체", "contractManufacturer")}
       ${compareReviewTypeSelect(slot)}
+      ${compareExportOnlyMode(slot)}
       ${compareInput(slot, "성분명1", "ingredient1")}
       ${compareInput(slot, "성분명2", "ingredient2")}
       ${compareInput(slot, "성분명3", "ingredient3")}
@@ -1240,6 +1258,23 @@ function resetHumanSearchFilters() {
   form.querySelectorAll(".quick-dates button").forEach((button) => {
     button.classList.toggle("active", button.dataset.range === "");
   });
+}
+
+function handleExportOnlyModeChange(target) {
+  if (!target?.matches?.("[data-export-only-mode]")) return;
+  const group = target.closest(".export-only-row");
+  if (!group) return;
+  const boxes = Array.from(group.querySelectorAll("[data-export-only-mode]"));
+  if (target.checked) {
+    boxes.forEach((box) => {
+      if (box !== target) box.checked = false;
+    });
+    return;
+  }
+  if (!boxes.some((box) => box.checked)) {
+    const includeBox = boxes.find((box) => box.value === "include") || boxes[0];
+    if (includeBox) includeBox.checked = true;
+  }
 }
 
 function preferredHomeMatchLabel(group, fallback = "제품명") {
@@ -2635,6 +2670,10 @@ form.addEventListener("reset", () => {
   setTimeout(() => loadResults({ resetPage: true }), 0);
 });
 
+form.addEventListener("change", (event) => {
+  handleExportOnlyModeChange(event.target);
+});
+
 form.querySelectorAll(".segmented").forEach((group) => {
   group.addEventListener("click", (event) => {
     const button = event.target.closest("button");
@@ -2901,6 +2940,10 @@ if (compareSlots) {
     } else {
       loadCompareResults(slot?.id, { resetPage: true });
     }
+  });
+
+  compareSlots.addEventListener("change", (event) => {
+    handleExportOnlyModeChange(event.target);
   });
 
   compareSlots.addEventListener("click", (event) => {

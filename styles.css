@@ -431,6 +431,28 @@ button:focus-visible {
   gap: 8px;
 }
 
+.checkbox-row {
+  align-items: center;
+}
+
+.checkbox-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  margin-right: 10px;
+  color: #30464f;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.checkbox-row input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--teal);
+}
+
 .segmented {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
