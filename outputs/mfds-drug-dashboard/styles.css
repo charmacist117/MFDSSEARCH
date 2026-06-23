@@ -1311,8 +1311,8 @@ button:focus-visible {
 }
 
 .result-table {
-  width: 100%;
-  min-width: 1070px;
+  width: max-content;
+  min-width: 1230px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -1323,8 +1323,12 @@ button:focus-visible {
   padding: 9px 10px;
   vertical-align: top;
   text-align: left;
-  word-break: break-all;
-  overflow-wrap: break-word;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 .result-table th {
@@ -1400,19 +1404,23 @@ button:focus-visible {
 .ingredient-lines {
   display: grid;
   gap: 3px;
-  min-width: 160px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .ingredient-lines span,
 .unit-dose-lines span {
   display: block;
+  min-width: 0;
+  max-width: 100%;
   overflow-wrap: anywhere;
 }
 
 .unit-dose-lines {
   display: grid;
   gap: 4px;
-  min-width: 150px;
+  min-width: 0;
+  max-width: 100%;
   line-height: 1.45;
 }
 

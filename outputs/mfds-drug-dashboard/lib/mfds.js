@@ -434,6 +434,53 @@ function filterExtraIngredients(items, ingredient4, ingredient5) {
   });
 }
 
+function humanClientFilters(query = {}) {
+  return {
+    presenceFilters: extractHumanPresenceFilters(query),
+    ingredient4: normalSearchValue(query.ingredient4),
+    ingredient5: normalSearchValue(query.ingredient5),
+    reviewType: normalSearchValue(query.reviewType),
+    exportMode: exportOnlyMode(query.exportOnlyMode)
+  };
+}
+
+function hasHumanClientFilters(filters = {}) {
+  return Boolean(
+    filters.presenceFilters?.length ||
+    filters.ingredient4 ||
+    filters.ingredient5 ||
+    filters.reviewType ||
+    needsExportOnlyDetail(filters.exportMode)
+  );
+}
+
+function humanClientFiltersNeedDetail(filters = {}) {
+  return Boolean(
+    presenceFiltersNeedDetail(filters.presenceFilters || []) ||
+    filters.reviewType ||
+    needsExportOnlyDetail(filters.exportMode)
+  );
+}
+
+function applyHumanClientFilters(items, filters = {}) {
+  let filtered = items;
+  filtered = filterExtraIngredients(filtered, filters.ingredient4, filters.ingredient5);
+  
+  const needsDetail = humanClientFiltersNeedDetail(filters);
+  if (needsDetail) {
+    filtered = filtered.filter((item) => !item.detailError);
+  }
+
+  filtered = applyHumanPresenceFilters(filtered, filters.presenceFilters || []);
+  if (filters.reviewType) {
+    filtered = filtered.filter((item) => reviewTypeMatches(item, filters.reviewType));
+  }
+  if (filters.exportMode) {
+    filtered = applyExportOnlyFilter(filtered, filters.exportMode);
+  }
+  return filtered;
+}
+
 async function enrichItemsWithDetails(items, detailOptions = {}) {
   const concurrency = Math.max(Number(detailOptions.concurrency || 4), 1);
   const deadlineAt = Number(detailOptions.deadlineAt || 0);
@@ -441,7 +488,7 @@ async function enrichItemsWithDetails(items, detailOptions = {}) {
   const detailed = await mapConcurrent(items, concurrency, async (item) => {
     if (deadlineAt && Date.now() > deadlineAt) {
       timedOut = true;
-      return item;
+      return { ...item, detailError: true };
     }
     const cachedDetail = detailMemoryCache.get(String(item.itemSeq));
     if (cachedDetail) return mergeListDetail(item, cachedDetail);
@@ -449,10 +496,85 @@ async function enrichItemsWithDetails(items, detailOptions = {}) {
       const detail = await getMfdsDetail(item.itemSeq, detailOptions);
       return mergeListDetail(item, detail);
     } catch {
-      return item;
+      return { ...item, detailError: true };
     }
   });
   return { items: detailed, timedOut };
+}
+
+async function collectSearchPages(query, firstPage, maxPages = 12) {
+  const firstItems = firstPage.parsed.items || [];
+  const pageSize = firstItems.length || 15;
+  const nativeTotalPages = firstPage.parsed.total ? Math.ceil(firstPage.parsed.total / pageSize) : 1;
+  const pagesToFetch = [];
+  for (let page = 2; page <= Math.min(nativeTotalPages, maxPages); page += 1) {
+    pagesToFetch.push(page);
+  }
+  const extraPages = await mapConcurrent(pagesToFetch, 3, async (page) => {
+    try {
+      return await fetchSearchPage(query, page);
+    } catch {
+      return { parsed: { items: [] } };
+    }
+  });
+  return [firstPage, ...extraPages].flatMap((result) => result.parsed.items || []);
+}
+
+async function searchMfdsWithClientFilters(query, page, cacheKey) {
+  const filters = humanClientFilters(query);
+  const nativeQuery = {
+    ...stripDerivedSearchFields(query),
+    timeoutMs: valueOf(query.timeoutMs) || "10000",
+    retries: valueOf(query.retries) || "2",
+    fastFail: valueOf(query.fastFail) || "0"
+  };
+  const firstPage = await fetchSearchPage(nativeQuery, 1);
+  const nativePageSize = firstPage.parsed.items.length || 15;
+  const requestedScanPages = Number(valueOf(query.presenceScanPages) || valueOf(query.clientFilterPages) || 12);
+  const maxScanPages = Math.min(Math.max(requestedScanPages, page), 25);
+  const candidates = await collectSearchPages(nativeQuery, firstPage, maxScanPages);
+  const searchStartedAt = Date.now();
+  const budgetMs = Math.max(Number(valueOf(query.contractBudgetMs) || 18000), 6000);
+
+  let checkedItems = candidates;
+  let timedOut = false;
+  if (humanClientFiltersNeedDetail(filters)) {
+    const enriched = await enrichItemsWithDetails(candidates, {
+      retries: Number(valueOf(query.detailRetries) || 1),
+      timeoutMs: Number(valueOf(query.detailTimeoutMs) || 5000),
+      fallbackOnFetchError: valueOf(query.detailFallback) === "1",
+      concurrency: Number(valueOf(query.detailConcurrency) || 4),
+      deadlineAt: searchStartedAt + budgetMs
+    });
+    checkedItems = enriched.items;
+    timedOut = enriched.timedOut;
+  }
+
+  const filteredItems = applyHumanClientFilters(checkedItems, filters);
+  const total = filteredItems.length;
+  const pageSize = nativePageSize;
+  const start = (page - 1) * pageSize;
+  const items = filteredItems.slice(start, start + pageSize);
+  const scannedTotalPages = firstPage.parsed.total ? Math.ceil(firstPage.parsed.total / nativePageSize) : 1;
+  const noticeParts = [
+    `#/$ 조건은 원본 목록 ${Math.min(maxScanPages, scannedTotalPages)}페이지 ${candidates.length}건을 확인해 적용했습니다.`
+  ];
+  if (scannedTotalPages > maxScanPages) {
+    noticeParts.push("검색 범위가 넓어 일부 후보만 확인했습니다. 제품명, 업체명, 성분명 등으로 조건을 좁히면 더 정확합니다.");
+  }
+  if (timedOut) {
+    noticeParts.push("일부 상세정보 확인은 시간이 초과되어 목록 값 기준으로 처리했습니다.");
+  }
+
+  return searchMemoryCache.set(cacheKey, {
+    page,
+    pageSize,
+    total,
+    totalPages: total ? Math.ceil(total / pageSize) : 1,
+    items,
+    notice: noticeParts.join(" "),
+    sourceUrl: firstPage.url
+  });
 }
 
 
@@ -1018,6 +1140,11 @@ async function searchMfds(query = {}) {
     return searchMfdsByContractManufacturer(query, page, cacheKey);
   }
 
+  const clientFilters = humanClientFilters(query);
+  if (hasHumanClientFilters(clientFilters)) {
+    return searchMfdsWithClientFilters(query, page, cacheKey);
+  }
+
   const url = buildSearchUrl({ ...query, page });
   const timeoutMs = Number(valueOf(query.timeoutMs) || 15000);
   const retries = Number(valueOf(query.retries) || 2);
@@ -1034,7 +1161,6 @@ async function searchMfds(query = {}) {
 
   if (ingredient4 || ingredient5) {
     items = filterExtraIngredients(items, ingredient4, ingredient5);
-    total = items.length;
     if (!notice) notice = "성분명4/5 검색은 현재 페이지 주성분 텍스트 기준으로 필터링됩니다.";
   }
   if (presenceFilters.length || reviewType || exportMode) {
@@ -1056,7 +1182,6 @@ async function searchMfds(query = {}) {
     if (presenceFilters.length) {
       const beforeCount = items.length;
       items = applyHumanPresenceFilters(items, presenceFilters);
-      total = items.length;
       if (!notice) {
         notice = "#/$ 조건은 현재 조회된 목록에서 값 있음/값 없음 기준으로 적용했습니다.";
       } else if (beforeCount !== items.length) {
@@ -1067,7 +1192,6 @@ async function searchMfds(query = {}) {
   if (reviewType) {
     const beforeCount = items.length;
     items = items.filter((item) => reviewTypeMatches(item, reviewType));
-    total = items.length;
     if (!notice) {
       notice = "허가심사유형은 상세정보를 확인한 뒤 현재 조회된 목록에서 필터링됩니다.";
     } else if (beforeCount !== items.length) {
@@ -1078,7 +1202,6 @@ async function searchMfds(query = {}) {
   if (exportMode) {
     const beforeCount = items.length;
     items = applyExportOnlyFilter(items, exportMode);
-    total = items.length;
     if (!notice) {
       notice = `수출용 ${exportMode === "exclude" ? "불포함" : "전용"} 조건이 현재 조회 목록에 적용되었습니다.`;
     } else if (beforeCount !== items.length) {
@@ -1086,7 +1209,7 @@ async function searchMfds(query = {}) {
     }
   }
 
-  const pageSize = items.length || parsed.items.length || 10;
+  const pageSize = parsed.items.length || 15;
   return searchMemoryCache.set(cacheKey, {
     page,
     pageSize,

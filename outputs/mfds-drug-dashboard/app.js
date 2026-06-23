@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "neon-export-toggle-20260622-2";
+const API_VERSION = "presence-filter-layout-20260623-1";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -231,10 +231,27 @@ function withExportOnlyMode(values, root) {
   };
 }
 
+function hasPresenceToken(params) {
+  return [...params.values()].some((value) => {
+    const text = String(value || "").trim();
+    return text === "#" || text === "$";
+  });
+}
+
 function buildSearchParams() {
   const values = withExportOnlyMode(Object.fromEntries(new FormData(form).entries()), form);
   const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page), _v: API_VERSION });
-  if (params.get("contractManufacturer") || params.get("reviewType") || ["exclude", "only"].includes(params.get("exportOnlyMode"))) {
+  const usesPresenceToken = hasPresenceToken(params);
+  if (usesPresenceToken) {
+    params.set("timeoutMs", "10000");
+    params.set("retries", "2");
+    params.set("fastFail", "0");
+    params.set("presenceScanPages", "12");
+    params.set("contractBudgetMs", "18000");
+    params.set("detailTimeoutMs", "5000");
+    params.set("detailRetries", "1");
+    params.set("detailConcurrency", "4");
+  } else if (params.get("contractManufacturer") || params.get("reviewType") || ["exclude", "only"].includes(params.get("exportOnlyMode"))) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "1");
@@ -330,7 +347,17 @@ function syncCompareQueryFromForm(slot, formEl) {
 
 function compactParams(values, filters, page) {
   const params = new URLSearchParams({ ...values, ...filters, page: String(page), _v: API_VERSION });
-  if (params.get("contractManufacturer") || params.get("reviewType") || ["exclude", "only"].includes(params.get("exportOnlyMode"))) {
+  const usesPresenceToken = hasPresenceToken(params);
+  if (usesPresenceToken) {
+    params.set("timeoutMs", "10000");
+    params.set("retries", "2");
+    params.set("fastFail", "0");
+    params.set("presenceScanPages", "12");
+    params.set("contractBudgetMs", "18000");
+    params.set("detailTimeoutMs", "5000");
+    params.set("detailRetries", "1");
+    params.set("detailConcurrency", "4");
+  } else if (params.get("contractManufacturer") || params.get("reviewType") || ["exclude", "only"].includes(params.get("exportOnlyMode"))) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "1");
