@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "export-tag-filter-20260624-2";
+const API_VERSION = "export-tag-filter-20260624-3";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -174,7 +174,7 @@ function rowWithCachedDetail(row) {
 
 function exportOnlyTagHtml(drug) {
   const tags = Array.isArray(drug?.tags) ? drug.tags : [];
-  const hasExportOnly = Boolean(drug?.exportOnly || tags.includes("수출용"));
+  const hasExportOnly = Boolean(drug?.exportOnly || tags.includes("수출용") || hasExportOnlyName(drug?.itemName));
   return hasExportOnly ? `<span class="tag amber">수출용</span>` : "";
 }
 
@@ -235,6 +235,66 @@ function withExportOnlyMode(values, root) {
     ...values,
     exportOnlyMode: box.checked ? "include" : "exclude"
   };
+}
+
+function hasExportOnlyName(value) {
+  return /[\(（]\s*수출용\s*[\)）]/i.test(String(value || ""));
+}
+
+function withExportOnlyTag(row = {}) {
+  const tags = Array.isArray(row.tags) ? [...row.tags] : [];
+  const exportOnly = Boolean(row.exportOnly || hasExportOnlyName(row.itemName));
+  if (exportOnly && !tags.includes("수출용")) tags.push("수출용");
+  return { ...row, exportOnly, tags };
+}
+
+function applyClientExportOnlyMode(payload = {}, mode = "") {
+  const normalizedMode = String(mode || "").toLowerCase();
+  const rows = (payload.items || []).map(withExportOnlyTag);
+  const items = normalizedMode === "exclude"
+    ? rows.filter((row) => !row.exportOnly)
+    : normalizedMode === "only"
+      ? rows.filter((row) => row.exportOnly)
+      : rows;
+  const notices = [payload.notice || ""];
+  if (normalizedMode === "exclude" && rows.length !== items.length && !notices.join(" ").includes("수출용")) {
+    notices.push("수출용 불포함 조건이 현재 조회 목록에 적용되었습니다.");
+  }
+  return {
+    ...payload,
+    items,
+    notice: notices.filter(Boolean).join(" ")
+  };
+}
+
+async function requestHumanSearch(params) {
+  const response = await fetch(`/api/search?${params}`);
+  if (!response.ok) {
+    let errMsg = `검색 요청 실패 (${response.status})`;
+    try {
+      const errJson = await response.json();
+      if (errJson?.message) errMsg += `: ${errJson.message}`;
+    } catch {}
+    throw new Error(errMsg);
+  }
+  return response.json();
+}
+
+async function normalizeHumanSearchPayload(payload, params) {
+  const mode = String(params.get("exportOnlyMode") || "").toLowerCase();
+  let normalized = applyClientExportOnlyMode(payload, mode);
+  if ((mode === "exclude" || mode === "only") && !(normalized.items || []).length) {
+    const retryParams = new URLSearchParams(params);
+    retryParams.set("exportOnlyMode", "include");
+    retryParams.set("_v", `${API_VERSION}-client-export-retry`);
+    const retryPayload = await requestHumanSearch(retryParams);
+    normalized = applyClientExportOnlyMode(retryPayload, mode);
+    normalized.notice = [
+      normalized.notice || "",
+      "수출용 조건은 제품명 태그 기준으로 보정 적용했습니다."
+    ].filter(Boolean).join(" ");
+  }
+  return normalized;
 }
 
 function hasPresenceToken(params) {
@@ -1699,16 +1759,8 @@ async function loadCompareResults(slotId, { resetPage = false } = {}) {
   renderCompareSlots();
 
   try {
-    const response = await fetch(`/api/search?${compactParams(slot.query, slot.filters, slot.page)}`);
-    if (!response.ok) {
-      let errMsg = `검색 요청 실패 (${response.status})`;
-      try {
-        const errJson = await response.json();
-        if (errJson?.message) errMsg += `: ${errJson.message}`;
-      } catch {}
-      throw new Error(errMsg);
-    }
-    const payload = await response.json();
+    const params = compactParams(slot.query, slot.filters, slot.page);
+    const payload = await normalizeHumanSearchPayload(await requestHumanSearch(params), params);
     slot.rows = payload.items || [];
     slot.total = Number(payload.total || 0);
     slot.notice = payload.notice || "";
@@ -1764,18 +1816,8 @@ async function loadResults({ resetPage = false } = {}) {
   render();
 
   try {
-    const response = await fetch(`/api/search?${buildSearchParams()}`);
-    if (!response.ok) {
-      let errMsg = `검색 요청 실패 (${response.status})`;
-      try {
-        const errJson = await response.json();
-        if (errJson && errJson.message) {
-          errMsg += `: ${errJson.message}`;
-        }
-      } catch {}
-      throw new Error(errMsg);
-    }
-    const payload = await response.json();
+    const params = buildSearchParams();
+    const payload = await normalizeHumanSearchPayload(await requestHumanSearch(params), params);
 
     state.rows = payload.items || [];
     state.total = Number(payload.total || 0);
