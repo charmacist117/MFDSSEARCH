@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "export-tag-filter-20260624-1";
+const API_VERSION = "export-tag-filter-20260624-2";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -257,7 +257,7 @@ function buildSearchParams() {
     params.set("detailTimeoutMs", "5000");
     params.set("detailRetries", "1");
     params.set("detailConcurrency", "4");
-  } else if (params.get("contractManufacturer") || params.get("reviewType") || ["exclude", "only"].includes(params.get("exportOnlyMode"))) {
+  } else if (params.get("contractManufacturer") || params.get("reviewType")) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "1");
@@ -363,7 +363,7 @@ function compactParams(values, filters, page) {
     params.set("detailTimeoutMs", "5000");
     params.set("detailRetries", "1");
     params.set("detailConcurrency", "4");
-  } else if (params.get("contractManufacturer") || params.get("reviewType") || ["exclude", "only"].includes(params.get("exportOnlyMode"))) {
+  } else if (params.get("contractManufacturer") || params.get("reviewType")) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "1");
