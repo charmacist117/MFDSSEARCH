@@ -374,30 +374,21 @@ function buildAquaticUrl(query = {}) {
   const precautionQuery = normalSearchValue(query.precautionQuery);
   const params = new URLSearchParams({
     pageNo: normalSearchValue(query.page) || "1",
-    prdlstNm: normalSearchValue(query.productName),
-    goodsNm: normalSearchValue(query.productName),
-    bsshNm: normalSearchValue(query.companyName),
-    entrpsNm: normalSearchValue(query.companyName),
-    ingrNm: ingredientQuery || normalSearchValue(query.ingredientName),
-    ingrNm1: ingredients[0] || "",
-    ingrNm2: ingredients[1] || "",
-    ingrNm3: ingredients[2] || "",
-    ingrNm4: ingredients[3] || "",
-    ingrNm5: ingredients[4] || "",
+    srchTxt: normalSearchValue(query.productName),
+    srchTxt2: normalSearchValue(query.companyName),
+    srchDref: ingredientQuery || normalSearchValue(query.ingredientName),
+    srchFishNm: normalSearchValue(query.fishName),
+    srchDise: normalSearchValue(query.disease),
+    drugShape: normalSearchValue(query.dosageForm),
+    insPath: normalSearchValue(query.route),
+    order_name: normalSearchValue(query.sortField) || "1",
+    order_type: normalSearchValue(query.sortOrder) || "asc",
     effect: efficacyQuery,
     efficacy: efficacyQuery,
-    efcyQesitm: efficacyQuery,
     usage: dosageQuery,
     dosage: dosageQuery,
     caution: precautionQuery,
-    precaution: precautionQuery,
-    nbDocData: precautionQuery,
-    searchConEe: normalSearchValue(query.efficacyOperator) || "AND",
-    searchConUd: normalSearchValue(query.dosageOperator) || "AND",
-    searchConNb: normalSearchValue(query.precautionOperator) || "AND",
-    fishNm: normalSearchValue(query.fishName),
-    dissNm: normalSearchValue(query.disease),
-    dosageForm: normalSearchValue(query.dosageForm)
+    precaution: precautionQuery
   });
   return `${AQUATIC_BASE_URL}?${params}`;
 }
@@ -710,7 +701,68 @@ function contextLines(text, pattern, radius = 1) {
   return [...picked].join("\n");
 }
 
+const AQUATIC_SPECIES_TERMS_KO = [
+  "어류",
+  "수산동물",
+  "넙치",
+  "광어",
+  "조피볼락",
+  "우럭",
+  "뱀장어",
+  "송어",
+  "연어",
+  "잉어",
+  "붕어",
+  "메기",
+  "틸라피아",
+  "돔",
+  "감성돔",
+  "참돔",
+  "방어",
+  "새우",
+  "흰다리새우",
+  "전복",
+  "굴",
+  "조개"
+];
+
+function uniqueKoreanSpeciesMatches(text, terms) {
+  const source = String(text || "");
+  const found = [];
+  for (const term of terms) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = term.length <= 1
+      ? new RegExp(`(^|[^가-힣])${escaped}([^가-힣]|$)`)
+      : new RegExp(escaped);
+    if (pattern.test(source) && !found.includes(term)) found.push(term);
+  }
+  return found;
+}
+
+function aquaticUsageText(parsed, plainText) {
+  return [
+    (parsed.sections || [])
+      .filter((section) => /효능|효과|용법|용량|투여|대상|어종|질병/i.test(section.title))
+      .map((section) => section.text)
+      .join("\n"),
+    (parsed.tables || [])
+      .filter((table) => /효능|효과|용법|용량|투여|대상|어종|질병/i.test(table.title || ""))
+      .map((table) => (table.rows || []).flat().join("\n"))
+      .join("\n"),
+    (parsed.pairs || [])
+      .filter(([label]) => /효능|효과|용법|용량|투여|대상|어종|질병/i.test(label))
+      .map(([, value]) => value)
+      .join("\n"),
+    contextLines(plainText, /어류|수산동물|넙치|광어|조피볼락|우럭|뱀장어|송어|연어|잉어|붕어|메기|틸라피아|돔|감성돔|참돔|방어|새우|흰다리새우|전복|굴|조개|효능|효과|용법|용량|투여|기생충|질병/i, 2)
+  ].filter(Boolean).join("\n");
+}
+
 function inferUsageHighlights(kind, parsed, plainText) {
+  if (kind === "aquatic") {
+    const usable = uniqueKoreanSpeciesMatches(aquaticUsageText(parsed, plainText), AQUATIC_SPECIES_TERMS_KO);
+    return { usable, unusable: [] };
+  }
+
   const terms = kind === "aquatic" ? AQUATIC_SPECIES_TERMS : VET_SPECIES_TERMS;
   const sectionText = (titlePattern) =>
     (parsed.sections || [])
