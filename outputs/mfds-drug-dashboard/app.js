@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "aquatic-search-params-20260624-1";
+const API_VERSION = "export-tag-filter-20260624-1";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -170,6 +170,12 @@ function friendlySearchError(error) {
 function rowWithCachedDetail(row) {
   const detail = state.detailCache[row.itemSeq];
   return detail ? mergeKeepNonEmpty(row, detail) : row;
+}
+
+function exportOnlyTagHtml(drug) {
+  const tags = Array.isArray(drug?.tags) ? drug.tags : [];
+  const hasExportOnly = Boolean(drug?.exportOnly || tags.includes("수출용"));
+  return hasExportOnly ? `<span class="tag amber">수출용</span>` : "";
 }
 
 function getPerformanceYears() {
@@ -1561,6 +1567,7 @@ function renderCompareRows(slot) {
             <div class="tag-row">
               <span class="tag blue">${escapeHtml(drug.itemSeq || "-")}</span>
               <span class="tag">${escapeHtml(drug.itemCategory || "-")}</span>
+              ${exportOnlyTagHtml(drug)}
             </div>
           </td>
           <td>${escapeHtml(drug.entpName || "-")}</td>
@@ -2062,6 +2069,7 @@ function renderResults() {
               <span class="tag blue">${escapeHtml(drug.itemSeq)}</span>
               <span class="tag">${escapeHtml(drug.itemCategory || "-")}</span>
               <span class="tag ${drug.cancelStatus === "정상" ? "green" : "amber"}">${escapeHtml(drug.cancelStatus || "-")}</span>
+              ${exportOnlyTagHtml(drug)}
             </div>
           </td>
           <td>${escapeHtml(drug.entpName || "-")}</td>
@@ -2210,6 +2218,7 @@ function renderDetail() {
         <span class="tag">${escapeHtml(drug.etcOtc || "-")}</span>
         <span class="tag ${drug.cancelStatus === "정상" ? "green" : "amber"}">${escapeHtml(drug.cancelStatus || "-")}</span>
         <span class="tag">${escapeHtml(drug.makeMaterial || "-")}</span>
+        ${exportOnlyTagHtml(drug)}
       </div>
     </header>
     <div class="detail-content">
