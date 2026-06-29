@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "insurance-price-column-20260629-1";
+const API_VERSION = "insurance-price-column-20260629-3";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -234,12 +234,12 @@ function formatInsurancePriceText(value) {
   const prices = Array.from(text.matchAll(/(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*원/g))
     .map((match) => Number(String(match[1]).replaceAll(",", "")))
     .filter(Number.isFinite);
-  const uniquePrices = Array.from(new Set(prices)).sort((a, b) => a - b);
-  if (uniquePrices.length >= 2) {
-    return `${uniquePrices[0].toLocaleString("ko-KR")}~${uniquePrices[uniquePrices.length - 1].toLocaleString("ko-KR")}원`;
-  }
-  if (uniquePrices.length === 1) {
-    return `${uniquePrices[0].toLocaleString("ko-KR")}원`;
+  const uniquePrices = [];
+  prices.forEach((price) => {
+    if (!uniquePrices.includes(price)) uniquePrices.push(price);
+  });
+  if (uniquePrices.length) {
+    return uniquePrices.map((price) => `${price.toLocaleString("ko-KR")}원`).join(", ");
   }
   return text;
 }
