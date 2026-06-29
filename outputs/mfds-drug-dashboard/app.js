@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "export-tag-filter-20260624-3";
+const API_VERSION = "insurance-price-column-20260629-1";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -228,6 +228,27 @@ function formatPerformanceYearCell(performance, year) {
   `;
 }
 
+function formatInsurancePriceText(value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text || text === "-") return "";
+  const prices = Array.from(text.matchAll(/(\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*원/g))
+    .map((match) => Number(String(match[1]).replaceAll(",", "")))
+    .filter(Number.isFinite);
+  const uniquePrices = Array.from(new Set(prices)).sort((a, b) => a - b);
+  if (uniquePrices.length >= 2) {
+    return `${uniquePrices[0].toLocaleString("ko-KR")}~${uniquePrices[uniquePrices.length - 1].toLocaleString("ko-KR")}원`;
+  }
+  if (uniquePrices.length === 1) {
+    return `${uniquePrices[0].toLocaleString("ko-KR")}원`;
+  }
+  return text;
+}
+
+function insurancePriceCellHtml(value) {
+  const priceText = formatInsurancePriceText(value);
+  return priceText ? escapeHtml(priceText) : `<span class="muted">-</span>`;
+}
+
 function withExportOnlyMode(values, root) {
   const box = root?.querySelector?.('[data-export-only-mode][name="exportOnlyMode"]');
   if (!box) return values;
@@ -312,11 +333,12 @@ function buildSearchParams() {
     params.set("timeoutMs", "10000");
     params.set("retries", "2");
     params.set("fastFail", "0");
-    params.set("presenceScanPages", "12");
-    params.set("contractBudgetMs", "18000");
-    params.set("detailTimeoutMs", "5000");
+    params.set("presenceScanPages", "3");
+    params.set("detailCandidateLimit", "30");
+    params.set("contractBudgetMs", "8000");
+    params.set("detailTimeoutMs", "2500");
     params.set("detailRetries", "1");
-    params.set("detailConcurrency", "4");
+    params.set("detailConcurrency", "5");
   } else if (params.get("contractManufacturer") || params.get("reviewType")) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
@@ -418,11 +440,12 @@ function compactParams(values, filters, page) {
     params.set("timeoutMs", "10000");
     params.set("retries", "2");
     params.set("fastFail", "0");
-    params.set("presenceScanPages", "12");
-    params.set("contractBudgetMs", "18000");
-    params.set("detailTimeoutMs", "5000");
+    params.set("presenceScanPages", "3");
+    params.set("detailCandidateLimit", "30");
+    params.set("contractBudgetMs", "8000");
+    params.set("detailTimeoutMs", "2500");
     params.set("detailRetries", "1");
-    params.set("detailConcurrency", "4");
+    params.set("detailConcurrency", "5");
   } else if (params.get("contractManufacturer") || params.get("reviewType")) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
@@ -2043,13 +2066,13 @@ function renderResults() {
   statusText.textContent = state.listLoading ? "목록을 불러오는 중" : state.error || state.notice || "MFDS 실시간 목록";
 
   const perfYears = getPerformanceYears();
-  const totalCols = 9 + perfYears.length;
+  const totalCols = 10 + perfYears.length;
 
   // Dynamic header rendering
   const theadRow = document.querySelector(".result-table thead tr");
   if (theadRow) {
-    const baseHeaders = ["제품명", "업체명", "주성분", "단위용량", "전문/일반", "허가일", "ATC", "위탁제조업체", "허가심사유형"];
-    const BASE_WIDTHS = [200, 110, 180, 170, 80, 90, 90, 130, 180];
+    const baseHeaders = ["제품명", "업체명", "주성분", "단위용량", "전문/일반", "보험약가", "허가일", "ATC", "위탁제조업체", "허가심사유형"];
+    const BASE_WIDTHS = [200, 110, 180, 170, 80, 110, 90, 90, 130, 180];
     let thHtml = "";
     baseHeaders.forEach((h, i) => {
       const width = state.columnWidths[h] || BASE_WIDTHS[i];
@@ -2118,6 +2141,7 @@ function renderResults() {
           <td><div class="ingredient-lines">${ingredientLines || "-"}</div></td>
           <td><div class="unit-dose-lines">${unitDoseLineHtml(drug.unitDose, state.unitDoseLoading && !drug.unitDose)}</div></td>
           <td>${escapeHtml(drug.etcOtc || "-")}</td>
+          <td>${insurancePriceCellHtml(drug.insurancePrice)}</td>
           <td>${escapeHtml(drug.permitDate || "-")}</td>
           <td>${escapeHtml(drug.atcCode || "-")}</td>
           <td>${escapeHtml(drug.contractManufacturer || "-")}</td>
@@ -2397,6 +2421,7 @@ function downloadCsvClientSide(category = "human") {
       ["mainIngredient", "주성분"],
       ["unitDose", "단위용량"],
       ["etcOtc", "전문/일반"],
+      ["insurancePrice", "보험약가"],
       ["permitDate", "허가일"],
       ["itemCategory", "품목구분"],
       ["cancelStatus", "취소/취하"],
@@ -2425,6 +2450,7 @@ function downloadCsvClientSide(category = "human") {
           let suffix = symbol === "₩" && unitText.includes("천원") ? " (천원)" : "";
           return toCsvValue(`${perf.type}: ${symbol}${r.amount}${suffix}`);
         }
+        if (key === "insurancePrice") return toCsvValue(formatInsurancePriceText(drug[key]));
         return toCsvValue(drug[key]);
       });
       lines.push(rowData.join(","));
@@ -2637,9 +2663,11 @@ async function downloadCsvAllResults(category = "human") {
         ["entpName", "업체명"],
         ["entpEngName", "업체영문명"],
         ["contractManufacturer", "위탁제조업체"],
+        ["reviewType", "허가심사유형"],
         ["mainIngredient", "주성분"],
         ["unitDose", "단위용량"],
         ["etcOtc", "전문/일반"],
+        ["insurancePrice", "보험약가"],
         ["permitDate", "허가일"],
         ["itemCategory", "품목구분"],
         ["cancelStatus", "취소/취하"],
@@ -2669,6 +2697,7 @@ async function downloadCsvAllResults(category = "human") {
             let suffix = symbol === "₩" && unitText.includes("천원") ? " (천원)" : "";
             return toCsvValue(`${perf.type}: ${symbol}${r.amount}${suffix}`);
           }
+          if (key === "insurancePrice") return toCsvValue(formatInsurancePriceText(drug[key]));
           return toCsvValue(drug[key]);
         });
         lines.push(rowData.join(","));
