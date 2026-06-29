@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "insurance-price-column-20260629-3";
+const API_VERSION = "insurance-price-column-20260629-4";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -2069,7 +2069,7 @@ function renderResults() {
   const totalCols = 10 + perfYears.length;
 
   // Dynamic header rendering
-  const theadRow = document.querySelector(".result-table thead tr");
+  const theadRow = document.querySelector("#humanResultTable thead tr");
   if (theadRow) {
     const baseHeaders = ["제품명", "업체명", "주성분", "단위용량", "전문/일반", "보험약가", "허가일", "ATC", "위탁제조업체", "허가심사유형"];
     const BASE_WIDTHS = [200, 110, 180, 170, 80, 110, 90, 90, 130, 180];
@@ -2153,7 +2153,7 @@ function renderResults() {
     .join("");
 
   // Initialize/refresh drag handles
-  initColumnResize();
+  initColumnResize(document.querySelector("#humanResultTable"), state.columnWidths);
 }
 
 function renderKeyValue(title, pairs) {

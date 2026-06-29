@@ -27,7 +27,10 @@ const mime = {
 };
 
 function sendJson(res, code, payload) {
-  res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
+  res.writeHead(code, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store, max-age=0"
+  });
   res.end(JSON.stringify(payload));
 }
 
@@ -149,6 +152,7 @@ const server = http.createServer(async (req, res) => {
           }
           res.writeHead(200, {
             "content-type": "text/csv; charset=utf-8",
+            "cache-control": "no-store, max-age=0",
             "content-disposition": `attachment; filename=export-${category}.csv`
           });
           res.end(csvContent);
@@ -169,7 +173,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     const body = await fs.readFile(target);
-    res.writeHead(200, { "content-type": mime[path.extname(target)] || "application/octet-stream" });
+    res.writeHead(200, {
+      "content-type": mime[path.extname(target)] || "application/octet-stream",
+      "cache-control": "no-store, max-age=0",
+      "pragma": "no-cache",
+      "expires": "0"
+    });
     res.end(body);
   } catch {
     res.writeHead(404);

@@ -19,6 +19,7 @@ module.exports = async function handler(req, res) {
     }
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store, max-age=0");
     res.setHeader("Content-Disposition", `attachment; filename=export-${category}.csv`);
     res.status(200).send(csvContent);
   } catch (error) {
