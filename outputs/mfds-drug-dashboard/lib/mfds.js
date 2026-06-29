@@ -957,6 +957,7 @@ function parseDetailHtml(html, sourceUrl = "") {
   const ingredientSection = extractSection(html, "scroll_02", "scroll_03");
   const durSection = extractSection(html, "scroll_06", "scroll_07");
   const extraSection = extractSection(html, "scroll_07");
+  const performanceSection = extractSection(html, "scroll_08");
   const basic = parseKeyValueRows(basicSection);
   const extra = parseKeyValueRows(extraSection);
   const ingredients = parseIngredients(ingredientSection);
@@ -1004,7 +1005,7 @@ function parseDetailHtml(html, sourceUrl = "") {
     packageInfo: extra["포장정보"] || "",
     insurancePrice: extra["보험약가"] || "",
     atcCode: extra["ATC코드"] || "",
-    performance: parsePerformance(extraSection),
+    performance: parsePerformance(performanceSection || extraSection),
     sourceUrl,
     fetchedAt: new Date().toISOString()
   };
@@ -1396,11 +1397,13 @@ async function generateMfdsCsv(query, cache = {}) {
     ["mainIngredientEng", "주성분영문명"],
     ["additives", "첨가제"],
     ["standardCode", "표준코드"],
-    ["atcCode", "ATC코드"]
+    ["atcCode", "ATC코드"],
+    ["performanceType", "실적구분"],
+    ["performanceUnit", "실적단위"]
   ];
 
   perfYears.forEach((year) => {
-    headers.push([`perf_${year}`, `${year}년 실적`]);
+    headers.push([`perf_${year}`, `${year}년 생산/수입실적`]);
   });
 
   const lines = [
@@ -1417,11 +1420,10 @@ async function generateMfdsCsv(query, cache = {}) {
         if (!perf || !perf.rows || !perf.rows.length) return toCsvValue("-");
         const r = perf.rows.find((item) => Number(item.year) === year);
         if (!r) return toCsvValue("-");
-        const unitText = perf.unit || "";
-        let symbol = unitText.includes("달러") || unitText.includes("$") ? "$" : "₩";
-        let suffix = symbol === "₩" && unitText.includes("천원") ? " (천원)" : "";
-        return toCsvValue(`${perf.type}: ${symbol}${r.amount}${suffix}`);
+        return toCsvValue(r.amount || "-");
       }
+      if (key === "performanceType") return toCsvValue(drug.performance?.type || "");
+      if (key === "performanceUnit") return toCsvValue(drug.performance?.unit || "");
       return toCsvValue(drug[key]);
     });
     lines.push(rowData.join(","));

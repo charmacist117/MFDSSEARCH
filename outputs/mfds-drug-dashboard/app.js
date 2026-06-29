@@ -53,7 +53,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "insurance-price-column-20260629-4";
+const API_VERSION = "performance-year-csv-20260629-1";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -226,6 +226,13 @@ function formatPerformanceYearCell(performance, year) {
       <span class="perf-amount">${symbol}${row.amount}${suffix}</span>
     </div>
   `;
+}
+
+function formatPerformanceYearText(performance, year) {
+  if (!performance || !performance.rows || !performance.rows.length) return "-";
+  const row = performance.rows.find((item) => Number(item.year) === Number(year));
+  if (!row) return "-";
+  return row.amount || "-";
 }
 
 function formatInsurancePriceText(value) {
@@ -2429,10 +2436,12 @@ function downloadCsvClientSide(category = "human") {
       ["mainIngredientEng", "주성분영문명"],
       ["additives", "첨가제"],
       ["standardCode", "표준코드"],
-      ["atcCode", "ATC코드"]
+      ["atcCode", "ATC코드"],
+      ["performanceType", "실적구분"],
+      ["performanceUnit", "실적단위"]
     ];
     perfYears.forEach((year) => {
-      headers.push([`perf_${year}`, `${year}년 실적`]);
+      headers.push([`perf_${year}`, `${year}년 생산/수입실적`]);
     });
     
     lines.push(headers.map(([, label]) => toCsvValue(label)).join(","));
@@ -2441,16 +2450,11 @@ function downloadCsvClientSide(category = "human") {
       const rowData = headers.map(([key]) => {
         if (key.startsWith("perf_")) {
           const year = Number(key.split("_")[1]);
-          const perf = drug.performance;
-          if (!perf || !perf.rows || !perf.rows.length) return toCsvValue("-");
-          const r = perf.rows.find((item) => Number(item.year) === year);
-          if (!r) return toCsvValue("-");
-          const unitText = perf.unit || "";
-          let symbol = unitText.includes("달러") || unitText.includes("$") ? "$" : "₩";
-          let suffix = symbol === "₩" && unitText.includes("천원") ? " (천원)" : "";
-          return toCsvValue(`${perf.type}: ${symbol}${r.amount}${suffix}`);
+          return toCsvValue(formatPerformanceYearText(drug.performance, year));
         }
         if (key === "insurancePrice") return toCsvValue(formatInsurancePriceText(drug[key]));
+        if (key === "performanceType") return toCsvValue(drug.performance?.type || "");
+        if (key === "performanceUnit") return toCsvValue(drug.performance?.unit || "");
         return toCsvValue(drug[key]);
       });
       lines.push(rowData.join(","));
@@ -2675,10 +2679,12 @@ async function downloadCsvAllResults(category = "human") {
         ["mainIngredientEng", "주성분영문명"],
         ["additives", "첨가제"],
         ["standardCode", "표준코드"],
-        ["atcCode", "ATC코드"]
+        ["atcCode", "ATC코드"],
+        ["performanceType", "실적구분"],
+        ["performanceUnit", "실적단위"]
       ];
       perfYears.forEach((year) => {
-        headers.push([`perf_${year}`, `${year}년 실적`]);
+        headers.push([`perf_${year}`, `${year}년 생산/수입실적`]);
       });
 
       lines.push(headers.map(([, label]) => toCsvValue(label)).join(","));
@@ -2688,16 +2694,11 @@ async function downloadCsvAllResults(category = "human") {
           if (key === "rowNumber") return toCsvValue(String(index + 1));
           if (key.startsWith("perf_")) {
             const year = Number(key.split("_")[1]);
-            const perf = drug.performance;
-            if (!perf || !perf.rows || !perf.rows.length) return toCsvValue("-");
-            const r = perf.rows.find((item) => Number(item.year) === year);
-            if (!r) return toCsvValue("-");
-            const unitText = perf.unit || "";
-            let symbol = unitText.includes("달러") || unitText.includes("$") ? "$" : "₩";
-            let suffix = symbol === "₩" && unitText.includes("천원") ? " (천원)" : "";
-            return toCsvValue(`${perf.type}: ${symbol}${r.amount}${suffix}`);
+            return toCsvValue(formatPerformanceYearText(drug.performance, year));
           }
           if (key === "insurancePrice") return toCsvValue(formatInsurancePriceText(drug[key]));
+          if (key === "performanceType") return toCsvValue(drug.performance?.type || "");
+          if (key === "performanceUnit") return toCsvValue(drug.performance?.unit || "");
           return toCsvValue(drug[key]);
         });
         lines.push(rowData.join(","));
