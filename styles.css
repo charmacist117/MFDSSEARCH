@@ -1356,6 +1356,42 @@ button:focus-visible {
   align-items: center;
 }
 
+.sort-header {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+}
+
+.sort-header span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sort-header:hover,
+.sort-header.active {
+  color: var(--teal-dark);
+}
+
+.sort-indicator {
+  color: #73838a;
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+}
+
 .col-resize-handle {
   position: absolute;
   right: 0;

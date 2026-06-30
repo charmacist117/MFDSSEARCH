@@ -18,6 +18,10 @@ const state = {
     etcOtc: "",
     makeMaterial: ""
   },
+  sort: {
+    key: "",
+    direction: "asc"
+  },
   columnWidths: {}
 };
 
@@ -53,7 +57,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "performance-year-csv-20260629-1";
+const API_VERSION = "table-sort-20260630-1";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -254,6 +258,85 @@ function formatInsurancePriceText(value) {
 function insurancePriceCellHtml(value) {
   const priceText = formatInsurancePriceText(value);
   return priceText ? escapeHtml(priceText) : `<span class="muted">-</span>`;
+}
+
+function parseSortableNumber(value) {
+  const text = String(value || "").replace(/,/g, "");
+  const match = text.match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function parseInsurancePriceNumber(value) {
+  const text = String(value || "");
+  const match = text.replace(/,/g, "").match(/(\d+(?:\.\d+)?)\s*원/);
+  return match ? Number(match[1]) : null;
+}
+
+function performanceValueForYear(performance, year) {
+  if (!performance || !performance.rows || !performance.rows.length) return null;
+  const row = performance.rows.find((item) => Number(item.year) === Number(year));
+  return row ? parseSortableNumber(row.amount) : null;
+}
+
+function sortValueForRow(row, key) {
+  const drug = rowWithCachedDetail(row);
+  if (key.startsWith("perf_")) {
+    return { type: "number", value: performanceValueForYear(drug.performance, key.split("_")[1]) };
+  }
+  if (key === "insurancePrice") return { type: "number", value: parseInsurancePriceNumber(drug.insurancePrice) };
+  if (key === "permitDate") return { type: "date", value: String(drug.permitDate || "") };
+  const value = key === "rowNumber"
+    ? drug.rowNumber
+    : drug[key];
+  return { type: "text", value: String(value || "").trim() };
+}
+
+function compareSortValues(left, right, direction) {
+  const leftMissing = left.value === null || left.value === undefined || left.value === "";
+  const rightMissing = right.value === null || right.value === undefined || right.value === "";
+  if (leftMissing && rightMissing) return 0;
+  if (leftMissing) return 1;
+  if (rightMissing) return -1;
+
+  let result = 0;
+  if (left.type === "number") {
+    result = Number(left.value) - Number(right.value);
+  } else if (left.type === "date") {
+    result = String(left.value).localeCompare(String(right.value), "ko", { numeric: true });
+  } else {
+    result = String(left.value).localeCompare(String(right.value), "ko", { numeric: true, sensitivity: "base" });
+  }
+  return direction === "desc" ? -result : result;
+}
+
+function sortedResultRows(rows) {
+  const key = state.sort?.key;
+  if (!key) return rows;
+  const direction = state.sort.direction === "desc" ? "desc" : "asc";
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const result = compareSortValues(sortValueForRow(a.row, key), sortValueForRow(b.row, key), direction);
+      return result || a.index - b.index;
+    })
+    .map((item) => item.row);
+}
+
+function sortHeaderHtml(column) {
+  const active = state.sort?.key === column.key;
+  const direction = active && state.sort.direction === "desc" ? "desc" : "asc";
+  const ariaSort = active ? (direction === "desc" ? "descending" : "ascending") : "none";
+  const indicator = active ? (direction === "desc" ? "▼" : "▲") : "↕";
+  const nextDirection = active && direction === "asc" ? "내림차순" : "오름차순";
+  return {
+    ariaSort,
+    html: `
+      <button type="button" class="sort-header ${active ? "active" : ""}" data-sort-key="${escapeHtml(column.key)}" title="${escapeHtml(`${column.label} ${nextDirection} 정렬`)}">
+        <span>${escapeHtml(column.label)}</span>
+        <span class="sort-indicator" aria-hidden="true">${indicator}</span>
+      </button>
+    `
+  };
 }
 
 function withExportOnlyMode(values, root) {
@@ -2078,17 +2161,29 @@ function renderResults() {
   // Dynamic header rendering
   const theadRow = document.querySelector("#humanResultTable thead tr");
   if (theadRow) {
-    const baseHeaders = ["제품명", "업체명", "주성분", "단위용량", "전문/일반", "보험약가", "허가일", "ATC", "위탁제조업체", "허가심사유형"];
-    const BASE_WIDTHS = [200, 110, 180, 170, 80, 110, 90, 90, 130, 180];
+    const baseColumns = [
+      { key: "itemName", label: "제품명", width: 200 },
+      { key: "entpName", label: "업체명", width: 110 },
+      { key: "mainIngredient", label: "주성분", width: 180 },
+      { key: "unitDose", label: "단위용량", width: 170 },
+      { key: "etcOtc", label: "전문/일반", width: 80 },
+      { key: "insurancePrice", label: "보험약가", width: 110 },
+      { key: "permitDate", label: "허가일", width: 90 },
+      { key: "atcCode", label: "ATC", width: 90 },
+      { key: "contractManufacturer", label: "위탁제조업체", width: 130 },
+      { key: "reviewType", label: "허가심사유형", width: 180 }
+    ];
     let thHtml = "";
-    baseHeaders.forEach((h, i) => {
-      const width = state.columnWidths[h] || BASE_WIDTHS[i];
-      thHtml += `<th style="width: ${width}px;"><div class="th-wrapper">${escapeHtml(h)}</div></th>`;
+    baseColumns.forEach((column) => {
+      const width = state.columnWidths[column.label] || column.width;
+      const header = sortHeaderHtml(column);
+      thHtml += `<th data-column-key="${escapeHtml(column.label)}" aria-sort="${header.ariaSort}" style="width: ${width}px;"><div class="th-wrapper">${header.html}</div></th>`;
     });
     perfYears.forEach((year) => {
       const h = `${year}년 실적`;
       const width = state.columnWidths[h] || 110;
-      thHtml += `<th style="width: ${width}px;"><div class="th-wrapper">${escapeHtml(h)}</div></th>`;
+      const header = sortHeaderHtml({ key: `perf_${year}`, label: h });
+      thHtml += `<th data-column-key="${escapeHtml(h)}" aria-sort="${header.ariaSort}" style="width: ${width}px;"><div class="th-wrapper">${header.html}</div></th>`;
     });
     theadRow.innerHTML = thHtml;
   }
@@ -2117,7 +2212,7 @@ function renderResults() {
     return;
   }
 
-  resultBody.innerHTML = state.rows
+  resultBody.innerHTML = sortedResultRows(state.rows)
     .map((row, index) => {
       const drug = rowWithCachedDetail(row);
       const selected = drug.itemSeq === state.selectedSeq ? "selected" : "";
@@ -2836,6 +2931,20 @@ resultBody.addEventListener("click", (event) => {
   state.selectedSeq = itemSeq;
   render();
   loadDetail(itemSeq);
+});
+
+document.querySelector("#humanResultTable")?.addEventListener("click", (event) => {
+  const sortButton = event.target.closest("[data-sort-key]");
+  if (!sortButton) return;
+  const key = sortButton.dataset.sortKey;
+  if (!key) return;
+  if (state.sort.key === key) {
+    state.sort.direction = state.sort.direction === "asc" ? "desc" : "asc";
+  } else {
+    state.sort.key = key;
+    state.sort.direction = "asc";
+  }
+  render();
 });
 
 detailPanel.addEventListener("click", (event) => {
