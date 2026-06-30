@@ -761,6 +761,61 @@ button:focus-visible {
   padding: 0;
 }
 
+.csv-choice-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(11, 23, 32, 0.42);
+}
+
+.csv-choice-dialog {
+  width: min(520px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(11, 23, 32, 0.24);
+  padding: 22px;
+}
+
+.csv-choice-dialog h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+.csv-choice-dialog p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.csv-choice-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
+.csv-choice-actions button {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 800;
+  padding: 8px 12px;
+}
+
+.csv-choice-actions button.primary {
+  border-color: var(--teal-dark);
+  background: var(--teal-dark);
+  color: #fff;
+}
+
 .changes-content {
   display: grid;
   gap: 14px;

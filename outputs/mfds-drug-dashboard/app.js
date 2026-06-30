@@ -57,7 +57,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "table-sort-20260630-1";
+const API_VERSION = "csv-download-choice-20260630-1";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -2468,6 +2468,56 @@ function toCsvValue(value) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
+function chooseCsvDownloadLimit(total, recommendedLimit = 1000) {
+  if (total <= recommendedLimit) return Promise.resolve(total);
+
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "csv-choice-modal";
+    overlay.innerHTML = `
+      <div class="csv-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="csvChoiceTitle">
+        <h2 id="csvChoiceTitle">CSV 다운로드 범위 선택</h2>
+        <p>
+          검색 결과가 ${total.toLocaleString("ko-KR")}건입니다.
+          1,000건 다운로드를 권장하며, 전체 다운로드는 MFDS 목록과 상세정보를 모두 수집하므로 오래 걸릴 수 있습니다.
+        </p>
+        <div class="csv-choice-actions">
+          <button type="button" class="primary" data-csv-choice="limited">1,000건만 다운로드</button>
+          <button type="button" data-csv-choice="all">전체 다운로드</button>
+          <button type="button" data-csv-choice="cancel">취소</button>
+        </div>
+      </div>
+    `;
+
+    const cleanup = (value) => {
+      document.removeEventListener("keydown", onKeyDown);
+      overlay.remove();
+      resolve(value);
+    };
+
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") cleanup(null);
+    };
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) {
+        cleanup(null);
+        return;
+      }
+      const button = event.target.closest("[data-csv-choice]");
+      if (!button) return;
+      const choice = button.dataset.csvChoice;
+      if (choice === "limited") cleanup(recommendedLimit);
+      else if (choice === "all") cleanup(total);
+      else cleanup(null);
+    });
+
+    document.body.appendChild(overlay);
+    document.addEventListener("keydown", onKeyDown);
+    overlay.querySelector("[data-csv-choice='limited']")?.focus();
+  });
+}
+
 function downloadCsvClientSide(category = "human") {
   let headers = [];
   const lines = [];
@@ -2585,15 +2635,9 @@ async function downloadCsvAllResults(category = "human") {
     return;
   }
 
-  const maxItems = 1000;
-  if (total > maxItems) {
-    const message = `검색 결과가 ${maxItems.toLocaleString("ko-KR")}건을 초과합니다 (${total.toLocaleString("ko-KR")}건).\n실시간 데이터 수집 및 속도 제한으로 인해 처음 ${maxItems.toLocaleString("ko-KR")}건까지만 다운로드됩니다. 전체 데이터를 보시려면 상세 검색 조건(제품명, 업체명 등)을 입력하여 검색 결과를 ${maxItems.toLocaleString("ko-KR")}건 이하로 좁혀주세요.\n\n계속해서 처음 ${maxItems.toLocaleString("ko-KR")}건을 다운로드하시겠습니까?`;
-    if (!confirm(message)) {
-      return;
-    }
-  }
-
-  const limitTotal = Math.min(total, maxItems);
+  const limitTotal = await chooseCsvDownloadLimit(total, 1000);
+  if (!limitTotal) return;
+  const downloadScope = limitTotal < total ? `first-${limitTotal}` : "all";
   const statusEl = document.querySelector("#statusText");
   const originalStatus = statusEl?.textContent || "";
 
@@ -2717,7 +2761,7 @@ async function downloadCsvAllResults(category = "human") {
         ].map(toCsvValue);
         lines.push(rowData.join(","));
       });
-      filename = `vet-drugs-all-${new Date().toISOString().slice(0, 10)}.csv`;
+      filename = `vet-drugs-${downloadScope}-${new Date().toISOString().slice(0, 10)}.csv`;
     } else if (category === "aquatic") {
       headers = ["허가번호", "제품명", "업체명", "제형", "투여경로", "최초허가일", "최종허가일", "허가조건", "비고"];
       lines.push(headers.map((h) => toCsvValue(h)).join(","));
@@ -2735,7 +2779,7 @@ async function downloadCsvAllResults(category = "human") {
         ].map(toCsvValue);
         lines.push(rowData.join(","));
       });
-      filename = `aquatic-drugs-all-${new Date().toISOString().slice(0, 10)}.csv`;
+      filename = `aquatic-drugs-${downloadScope}-${new Date().toISOString().slice(0, 10)}.csv`;
     } else {
       const finalItems = allItems.map((item) => {
         const detail = state.detailCache[item.itemSeq] || {};
@@ -2798,7 +2842,7 @@ async function downloadCsvAllResults(category = "human") {
         });
         lines.push(rowData.join(","));
       });
-      filename = `human-drugs-all-${new Date().toISOString().slice(0, 10)}.csv`;
+      filename = `human-drugs-${downloadScope}-${new Date().toISOString().slice(0, 10)}.csv`;
     }
 
     const uniqueFilename = getUniqueFilename(filename);

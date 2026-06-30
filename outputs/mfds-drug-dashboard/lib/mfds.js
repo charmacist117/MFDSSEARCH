@@ -1303,13 +1303,16 @@ function mergeKeepNonEmpty(base, overlay) {
 async function generateMfdsCsv(query, cache = {}) {
   const firstPage = await searchMfds({ ...query, page: 1 });
   const total = firstPage.total || 0;
-  const maxItems = 1000;
+  const limitValue = String(query.csvLimit || query.maxItems || "").trim().toLowerCase();
+  const maxItems = limitValue === "all" || limitValue === "전체"
+    ? Number.POSITIVE_INFINITY
+    : Math.max(Number(limitValue) || 1000, 1);
   const pageSize = firstPage.pageSize || 15;
   let items = [...(firstPage.items || [])];
 
   if (total > items.length && items.length < maxItems) {
     const totalPages = Math.ceil(total / pageSize);
-    const maxPages = Math.ceil(maxItems / pageSize);
+    const maxPages = Number.isFinite(maxItems) ? Math.ceil(maxItems / pageSize) : totalPages;
     const pagesToFetch = [];
     for (let p = 2; p <= Math.min(totalPages, maxPages); p += 1) {
       pagesToFetch.push(p);
@@ -1334,7 +1337,7 @@ async function generateMfdsCsv(query, cache = {}) {
     }
   }
 
-  items = items.slice(0, maxItems);
+  items = Number.isFinite(maxItems) ? items.slice(0, maxItems) : items;
 
   const detailedItems = [];
   const concurrencyLimit = 3;
