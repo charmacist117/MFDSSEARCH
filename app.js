@@ -57,7 +57,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "csv-download-choice-20260630-1";
+const API_VERSION = "csv-package-info-20260630-1";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -174,6 +174,14 @@ function friendlySearchError(error) {
 function rowWithCachedDetail(row) {
   const detail = state.detailCache[row.itemSeq];
   return detail ? mergeKeepNonEmpty(row, detail) : row;
+}
+
+function hasOwnField(value, key) {
+  return Boolean(value) && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function hasPackageInfoField(value) {
+  return hasOwnField(value, "packageInfo");
 }
 
 function exportOnlyTagHtml(drug) {
@@ -2001,7 +2009,8 @@ async function preloadAllDetails() {
 }
 
 async function fetchAndCacheDetail(itemSeq) {
-  if (state.detailCache[itemSeq] && !state.detailCache[itemSeq].detailPartial) return;
+  const cached = state.detailCache[itemSeq];
+  if (cached && !cached.detailPartial && hasPackageInfoField(cached)) return;
   try {
     const payload = await requestDetail(itemSeq);
     const row = state.rows.find((r) => r.itemSeq === itemSeq);
@@ -2034,7 +2043,7 @@ async function requestDetailBatch(itemSeqs) {
 async function hydrateCurrentPageDetails(generation = preloadGeneration) {
   const seqs = state.rows
     .map((row) => row.itemSeq)
-    .filter((seq) => seq && !state.detailCache[seq]?.unitDose);
+    .filter((seq) => seq && (!state.detailCache[seq]?.unitDose || !hasPackageInfoField(state.detailCache[seq])));
   if (!seqs.length) return;
 
   state.unitDoseLoading = true;
@@ -2574,6 +2583,7 @@ function downloadCsvClientSide(category = "human") {
       ["unitDose", "단위용량"],
       ["etcOtc", "전문/일반"],
       ["insurancePrice", "보험약가"],
+      ["packageInfo", "포장정보"],
       ["permitDate", "허가일"],
       ["itemCategory", "품목구분"],
       ["cancelStatus", "취소/취하"],
@@ -2691,7 +2701,7 @@ async function downloadCsvAllResults(category = "human") {
 
       allItems.forEach((item) => {
         const cached = cache[item.itemSeq];
-        const isCached = cached && cached.contractManufacturer !== undefined && !cached.detailError;
+        const isCached = cached && cached.contractManufacturer !== undefined && hasPackageInfoField(cached) && !cached.detailError;
         if (!isCached) {
           missingSeqs.push(item.itemSeq);
         }
@@ -2811,6 +2821,7 @@ async function downloadCsvAllResults(category = "human") {
         ["unitDose", "단위용량"],
         ["etcOtc", "전문/일반"],
         ["insurancePrice", "보험약가"],
+        ["packageInfo", "포장정보"],
         ["permitDate", "허가일"],
         ["itemCategory", "품목구분"],
         ["cancelStatus", "취소/취하"],
