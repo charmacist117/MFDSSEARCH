@@ -57,7 +57,7 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "review-type-generic-20260701-1";
+const API_VERSION = "contract-scan-20260701-1";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -439,14 +439,15 @@ function buildSearchParams() {
     params.set("detailRetries", "1");
     params.set("detailConcurrency", "5");
   } else if (params.get("contractManufacturer") || params.get("reviewType")) {
-    params.set("timeoutMs", "6500");
-    params.set("retries", "1");
-    params.set("fastFail", "1");
-    params.set("contractCandidateLimit", "6");
-    params.set("contractBudgetMs", "8000");
-    params.set("detailTimeoutMs", "1800");
+    params.set("timeoutMs", "10000");
+    params.set("retries", "2");
+    params.set("fastFail", "0");
+    params.set("contractScanPages", "3");
+    params.set("contractCandidateLimit", "45");
+    params.set("contractBudgetMs", "20000");
+    params.set("detailTimeoutMs", "3500");
     params.set("detailRetries", "1");
-    params.set("detailConcurrency", "4");
+    params.set("detailConcurrency", "5");
   }
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
@@ -546,14 +547,15 @@ function compactParams(values, filters, page) {
     params.set("detailRetries", "1");
     params.set("detailConcurrency", "5");
   } else if (params.get("contractManufacturer") || params.get("reviewType")) {
-    params.set("timeoutMs", "6500");
-    params.set("retries", "1");
-    params.set("fastFail", "1");
-    params.set("contractCandidateLimit", "6");
-    params.set("contractBudgetMs", "8000");
-    params.set("detailTimeoutMs", "1800");
+    params.set("timeoutMs", "10000");
+    params.set("retries", "2");
+    params.set("fastFail", "0");
+    params.set("contractScanPages", "3");
+    params.set("contractCandidateLimit", "45");
+    params.set("contractBudgetMs", "20000");
+    params.set("detailTimeoutMs", "3500");
     params.set("detailRetries", "1");
-    params.set("detailConcurrency", "4");
+    params.set("detailConcurrency", "5");
   }
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);

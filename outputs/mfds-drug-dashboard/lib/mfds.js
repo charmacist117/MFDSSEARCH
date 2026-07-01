@@ -1063,9 +1063,15 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
     fastFail: valueOf(query.fastFail) || "1"
   };
 
-  let { url, parsed } = await fetchSearchPage(nativeQuery, page);
-  const candidateLimit = Math.max(Number(valueOf(query.contractCandidateLimit) || 6), 0);
-  const candidateItems = candidateLimit ? parsed.items.slice(0, candidateLimit) : parsed.items;
+  const firstPage = await fetchSearchPage(nativeQuery, 1);
+  const nativePageSize = firstPage.parsed.items.length || 15;
+  const requestedScanPages = Number(valueOf(query.contractScanPages) || valueOf(query.presenceScanPages) || 3);
+  const maxScanPages = Math.min(Math.max(requestedScanPages, page), 25);
+  const allCandidates = await collectSearchPages(nativeQuery, firstPage, maxScanPages);
+  const candidateLimit = Math.max(Number(valueOf(query.contractCandidateLimit) || 30), 0);
+  const pageCandidateFloor = page * nativePageSize * 2;
+  const detailCandidateLimit = candidateLimit ? Math.max(candidateLimit, pageCandidateFloor) : allCandidates.length;
+  const candidateItems = candidateLimit ? allCandidates.slice(0, detailCandidateLimit) : allCandidates;
   const fastGlobal = valueOf(query._global) === "1";
   const remainingBudget = Math.max(budgetMs - (Date.now() - searchStartedAt), 1200);
   const detailTimeoutMs = Math.min(
@@ -1090,10 +1096,14 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
   const enriched = await enrichContractCandidates(candidateItems, contractManufacturer, detailOptions);
   let items = enriched.items;
   let total = items.length;
-  let sourceUrl = url;
-  let notice = `${CONTRACT_SEARCH_NOTICE} 현재 조회된 목록 ${candidateItems.length}건의 상세정보 기준으로 확인합니다.`;
-  if (parsed.items.length > candidateItems.length) {
+  let sourceUrl = firstPage.url;
+  const scannedTotalPages = firstPage.parsed.total ? Math.ceil(firstPage.parsed.total / nativePageSize) : 1;
+  let notice = `${CONTRACT_SEARCH_NOTICE} 원본 목록 ${Math.min(maxScanPages, scannedTotalPages)}페이지 ${allCandidates.length}건 중 ${candidateItems.length}건의 상세정보 기준으로 확인합니다.`;
+  if (allCandidates.length > candidateItems.length) {
     notice = `${notice} 응답 속도를 위해 먼저 ${candidateItems.length}건만 확인했습니다.`;
+  }
+  if (scannedTotalPages > maxScanPages) {
+    notice = `${notice} 검색 범위가 넓어 일부 후보만 확인했습니다. 제품명, 업체명, 성분명 등으로 조건을 좁히면 더 정확합니다.`;
   }
   if (enriched.timedOut) {
     notice = `${notice} 일부 상세 확인은 시간이 초과되어 건너뛰었습니다. 조건을 더 좁히면 더 정확합니다.`;
@@ -1131,13 +1141,16 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
     }
   }
 
-  const pageSize = items.length || parsed.items.length || 10;
+  total = items.length;
+  const pageSize = nativePageSize;
+  const start = (page - 1) * pageSize;
+  const pageItems = items.slice(start, start + pageSize);
   return searchMemoryCache.set(cacheKey, {
     page,
     pageSize,
     total,
     totalPages: total ? Math.ceil(total / pageSize) : 1,
-    items,
+    items: pageItems,
     notice,
     sourceUrl
   });
