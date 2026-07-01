@@ -57,13 +57,14 @@ const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSlotLimit = 5;
-const API_VERSION = "csv-package-info-20260630-1";
+const API_VERSION = "review-type-generic-20260701-1";
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
   "자료제출의약품(유전자재조합의약품 및 세포배양의약품)",
   "신약",
   "개량신약",
+  "제네릭",
   "희귀의약품",
   "표준제조기준",
   "안전성·유효성 심사대상",
