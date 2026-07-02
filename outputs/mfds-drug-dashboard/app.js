@@ -58,10 +58,15 @@ const groupSetupPanel = document.querySelector("#groupSetupPanel");
 const groupDashboard = document.querySelector("#groupDashboard");
 const groupBackButton = document.querySelector("#groupBackButton");
 const groupCsvButton = document.querySelector("#groupCsvButton");
+const groupReportModal = document.querySelector("#groupReportModal");
+const groupReportContent = document.querySelector("#groupReportContent");
+const groupReportCsvButton = document.querySelector("#groupReportCsvButton");
+const groupReportCloseButton = document.querySelector("#groupReportCloseButton");
 const vetWorkspace = document.querySelector("#vetWorkspace");
 const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
+const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
 const API_VERSION = "group-dashboard-20260702-1";
 const HOME_PREVIEW_LIMIT = 3;
@@ -757,6 +762,100 @@ function groupYearCsvCells(years, totals) {
   return years.map((year) => toCsvValue(totals?.[year] ? formatGroupTotal(totals[year]) : ""));
 }
 
+function productPerformanceTotals(product) {
+  const totals = {};
+  addPerformanceTotals(totals, product.performance);
+  return totals;
+}
+
+function aggregateGroupProducts(products) {
+  const packages = new Set();
+  const years = {};
+  products.forEach((product) => {
+    const packageText = packageUnitText(product);
+    if (packageText) packages.add(packageText);
+    addPerformanceTotals(years, product.performance);
+  });
+  return { packages, years };
+}
+
+function selectedProductsWithin(products, selectedSet) {
+  return products.filter((product) => selectedSet.has(product.itemSeq));
+}
+
+function renderGroupTreeRows(summary) {
+  if (!summary.compositions.length) {
+    return `<tr><td colspan="3" class="table-message">분석할 제품이 없습니다.</td></tr>`;
+  }
+
+  const rows = [];
+  summary.compositions.forEach((composition) => {
+    const compositionDoses = summary.doses.filter((dose) => dose.compositionKey === composition.key);
+    const visibleDoses = compositionDoses.length ? compositionDoses : [{
+      key: `${composition.key}::no-dose`,
+      compositionKey: composition.key,
+      dose: "-",
+      products: composition.products
+    }];
+    const compositionRowCount = Math.max(visibleDoses.reduce((sum, dose) => sum + Math.max(dose.products.length, 1), 0), 1);
+    let compositionRendered = false;
+
+    visibleDoses.forEach((dose) => {
+      const products = dose.products.length ? dose.products : [{
+        itemSeq: "",
+        itemName: "-",
+        entpName: "",
+        doseKey: dose.key
+      }];
+      const doseRowCount = Math.max(products.length, 1);
+      let doseRendered = false;
+
+      products.forEach((product) => {
+        const productKey = String(product.itemSeq || "");
+        rows.push(`
+          <tr>
+            ${compositionRendered ? "" : `
+              <td class="group-tree-cell composition-cell" rowspan="${compositionRowCount}">
+                <label class="group-tree-node">
+                  <input type="checkbox" data-group-toggle="compositions" data-key="${escapeHtml(composition.key)}" ${groupState.selected.compositions[composition.key] !== false ? "checked" : ""}>
+                  <span>
+                    <strong>${escapeHtml(composition.key)}</strong>
+                    <em>${composition.products.length.toLocaleString("ko-KR")}개 제품 · ${compositionDoses.length.toLocaleString("ko-KR")}개 세부 용량</em>
+                  </span>
+                </label>
+              </td>
+            `}
+            ${doseRendered ? "" : `
+              <td class="group-tree-cell dose-cell" rowspan="${doseRowCount}">
+                <label class="group-tree-node">
+                  <input type="checkbox" data-group-toggle="doses" data-key="${escapeHtml(dose.key)}" ${groupState.selected.doses[dose.key] !== false ? "checked" : ""}>
+                  <span>
+                    <strong>${escapeHtml(dose.dose || dose.key || "-")}</strong>
+                    <em>${dose.products.length.toLocaleString("ko-KR")}개 제품</em>
+                  </span>
+                </label>
+              </td>
+            `}
+            <td class="group-tree-cell product-cell">
+              <label class="group-tree-product">
+                <input type="checkbox" data-group-toggle="products" data-key="${escapeHtml(productKey)}" ${productKey && groupState.selected.products[productKey] !== false ? "checked" : ""}>
+                <span>
+                  <strong>${escapeHtml(product.itemName || "-")}</strong>
+                  <em>${escapeHtml([product.entpName, productKey && `품목기준코드 ${productKey}`].filter(Boolean).join(" · ") || "-")}</em>
+                </span>
+              </label>
+            </td>
+          </tr>
+        `);
+        compositionRendered = true;
+        doseRendered = true;
+      });
+    });
+  });
+
+  return rows.join("");
+}
+
 function renderGroupDashboard() {
   if (!groupDashboard || !groupSetupPanel) return;
   groupSetupPanel.hidden = groupState.step === "dashboard";
@@ -783,137 +882,193 @@ function renderGroupDashboard() {
   }
 
   const selectedProducts = selectedGroupProducts();
-  const selectedYears = {};
-  selectedProducts.forEach((product) => addPerformanceTotals(selectedYears, product.performance));
   const allCompositionsChecked = summary.compositions.every((item) => groupState.selected.compositions[item.key] !== false);
   const allDosesChecked = summary.doses.every((item) => groupState.selected.doses[item.key] !== false);
   const allProductsChecked = summary.products.every((item) => groupState.selected.products[item.itemSeq] !== false);
 
   groupDashboard.innerHTML = `
-    <div class="group-kpis">
-      <div><strong>${summary.products.length.toLocaleString("ko-KR")}</strong><span>전체 제품</span></div>
-      <div><strong>${selectedProducts.length.toLocaleString("ko-KR")}</strong><span>선택 제품</span></div>
-      <div><strong>${summary.ingredientCount.toLocaleString("ko-KR")}</strong><span>고유 성분</span></div>
-      <div><strong>${summary.compositions.length.toLocaleString("ko-KR")}</strong><span>성분 조합</span></div>
-      <div><strong>${summary.doses.length.toLocaleString("ko-KR")}</strong><span>세부 용량 조합</span></div>
-    </div>
-
-    <section class="group-section">
+    <section class="group-tree-section">
       <header>
-        <h2>선택 결과 연도별 총합 생산/수입실적</h2>
+        <div>
+          <h2>성분조합 · 세부용량조합 · 목록</h2>
+          <p>
+            전체 ${summary.products.length.toLocaleString("ko-KR")}개 제품 중
+            ${selectedProducts.length.toLocaleString("ko-KR")}개 선택 ·
+            성분조합 ${summary.compositions.length.toLocaleString("ko-KR")}개 ·
+            세부용량 ${summary.doses.length.toLocaleString("ko-KR")}개
+          </p>
+        </div>
+        <div class="group-tree-selectors">
+          <label><input type="checkbox" data-group-select-all="compositions" ${allCompositionsChecked ? "checked" : ""}> 성분조합 전체</label>
+          <label><input type="checkbox" data-group-select-all="doses" ${allDosesChecked ? "checked" : ""}> 세부용량 전체</label>
+          <label><input type="checkbox" data-group-select-all="products" ${allProductsChecked ? "checked" : ""}> 제품 전체</label>
+        </div>
       </header>
-      <div class="group-table-wrap">
-        <table class="result-table group-table">
-          <thead><tr>${summary.years.map((year) => `<th>${year}년</th>`).join("") || "<th>-</th>"}</tr></thead>
-          <tbody><tr>${summary.years.length ? groupYearCells(summary.years, selectedYears) : "<td>-</td>"}</tr></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="group-section">
-      <header>
-        <h2>성분 조합</h2>
-        <label><input type="checkbox" data-group-select-all="compositions" ${allCompositionsChecked ? "checked" : ""}> 전체선택</label>
-      </header>
-      <div class="group-table-wrap">
-        <table class="result-table group-table">
+      <div class="group-tree-wrap">
+        <table class="result-table group-tree-table">
           <thead>
             <tr>
-              <th>선택</th>
-              <th>성분 조합</th>
-              <th>동일제품 수</th>
-              <th>포장단위</th>
-              ${summary.years.map((year) => `<th>${year}년</th>`).join("")}
+              <th>성분조합</th>
+              <th>세부용량조합</th>
+              <th>목록</th>
             </tr>
           </thead>
-          <tbody>
-            ${summary.compositions.map((item) => `
-              <tr>
-                <td><input type="checkbox" data-group-toggle="compositions" data-key="${escapeHtml(item.key)}" ${groupState.selected.compositions[item.key] !== false ? "checked" : ""}></td>
-                <td>${escapeHtml(item.key)}</td>
-                <td>${item.products.length.toLocaleString("ko-KR")}</td>
-                <td>${escapeHtml(Array.from(item.packages).join(" / ") || "-")}</td>
-                ${groupYearCells(summary.years, item.years)}
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="group-section">
-      <header>
-        <h2>세부 용량 조합</h2>
-        <label><input type="checkbox" data-group-select-all="doses" ${allDosesChecked ? "checked" : ""}> 전체선택</label>
-      </header>
-      <div class="group-table-wrap">
-        <table class="result-table group-table">
-          <thead>
-            <tr>
-              <th>선택</th>
-              <th>성분 조합</th>
-              <th>세부 용량</th>
-              <th>동일제품 수</th>
-              <th>포장단위</th>
-              ${summary.years.map((year) => `<th>${year}년</th>`).join("")}
-            </tr>
-          </thead>
-          <tbody>
-            ${summary.doses.map((item) => `
-              <tr>
-                <td><input type="checkbox" data-group-toggle="doses" data-key="${escapeHtml(item.key)}" ${groupState.selected.doses[item.key] !== false ? "checked" : ""}></td>
-                <td>${escapeHtml(item.compositionKey)}</td>
-                <td>${escapeHtml(item.dose)}</td>
-                <td>${item.products.length.toLocaleString("ko-KR")}</td>
-                <td>${escapeHtml(Array.from(item.packages).join(" / ") || "-")}</td>
-                ${groupYearCells(summary.years, item.years)}
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="group-section">
-      <header>
-        <h2>제품 목록</h2>
-        <label><input type="checkbox" data-group-select-all="products" ${allProductsChecked ? "checked" : ""}> 전체선택</label>
-      </header>
-      <div class="group-table-wrap product-table-wrap">
-        <table class="result-table group-table">
-          <thead>
-            <tr>
-              <th>선택</th>
-              <th>제품명</th>
-              <th>업체명</th>
-              <th>성분 조합</th>
-              <th>세부 용량</th>
-              <th>포장단위</th>
-              ${summary.years.map((year) => `<th>${year}년</th>`).join("")}
-            </tr>
-          </thead>
-          <tbody>
-            ${summary.products.map((product) => `
-              <tr>
-                <td><input type="checkbox" data-group-toggle="products" data-key="${escapeHtml(product.itemSeq)}" ${groupState.selected.products[product.itemSeq] !== false ? "checked" : ""}></td>
-                <td>${escapeHtml(product.itemName || "-")}</td>
-                <td>${escapeHtml(product.entpName || "-")}</td>
-                <td>${escapeHtml(product.compositionKey)}</td>
-                <td>${escapeHtml(product.doseKey)}</td>
-                <td>${escapeHtml(product.packageUnit || "-")}</td>
-                ${groupYearCells(summary.years, product.performance?.rows?.reduce((acc, row) => {
-                  const year = String(row.year || "");
-                  const amount = parseSortableNumber(row.amount);
-                  if (/^\d{4}$/.test(year) && Number.isFinite(amount)) acc[year] = (acc[year] || 0) + amount;
-                  return acc;
-                }, {}))}
-              </tr>
-            `).join("")}
-          </tbody>
+          <tbody>${renderGroupTreeRows(summary)}</tbody>
         </table>
       </div>
     </section>
   `;
+
+  if (groupReportModal && !groupReportModal.hidden) renderGroupReportDashboard();
+}
+
+function renderGroupReportDashboard() {
+  if (!groupReportContent) return;
+  const summary = groupState.summary;
+  if (!summary) {
+    groupReportContent.innerHTML = `<div class="table-message">출력할 제품군 분석 데이터가 없습니다.</div>`;
+    return;
+  }
+
+  const selectedProducts = selectedGroupProducts();
+  const selectedSet = new Set(selectedProducts.map((product) => product.itemSeq));
+  const selectedYears = {};
+  selectedProducts.forEach((product) => addPerformanceTotals(selectedYears, product.performance));
+  const selectedCompositions = summary.compositions
+    .map((item) => ({ item, products: selectedProductsWithin(item.products, selectedSet) }))
+    .filter((entry) => entry.products.length);
+  const selectedDoses = summary.doses
+    .map((item) => ({ item, products: selectedProductsWithin(item.products, selectedSet) }))
+    .filter((entry) => entry.products.length);
+  const yearHeaders = summary.years.map((year) => `<th>${year}년</th>`).join("") || "<th>실적</th>";
+  const emptyYearCells = summary.years.length ? "" : "<td>-</td>";
+
+  const compositionRows = selectedCompositions.map(({ item, products }) => {
+    const aggregate = aggregateGroupProducts(products);
+    return `
+      <tr>
+        <td>${escapeHtml(item.key)}</td>
+        <td>${products.length.toLocaleString("ko-KR")}</td>
+        <td>${escapeHtml(Array.from(aggregate.packages).join(" / ") || "-")}</td>
+        ${summary.years.length ? groupYearCells(summary.years, aggregate.years) : emptyYearCells}
+      </tr>
+    `;
+  }).join("");
+
+  const doseRows = selectedDoses.map(({ item, products }) => {
+    const aggregate = aggregateGroupProducts(products);
+    return `
+      <tr>
+        <td>${escapeHtml(item.compositionKey)}</td>
+        <td>${escapeHtml(item.dose)}</td>
+        <td>${products.length.toLocaleString("ko-KR")}</td>
+        <td>${escapeHtml(Array.from(aggregate.packages).join(" / ") || "-")}</td>
+        ${summary.years.length ? groupYearCells(summary.years, aggregate.years) : emptyYearCells}
+      </tr>
+    `;
+  }).join("");
+
+  const productRows = selectedProducts.map((product) => {
+    const totals = productPerformanceTotals(product);
+    return `
+      <tr>
+        <td>${escapeHtml(product.itemName || "-")}</td>
+        <td>${escapeHtml(product.entpName || "-")}</td>
+        <td>${escapeHtml(product.itemSeq || "-")}</td>
+        <td>${escapeHtml(product.compositionKey || "-")}</td>
+        <td>${escapeHtml(product.doseKey || "-")}</td>
+        <td>${escapeHtml(product.packageUnit || product.packageInfo || "-")}</td>
+        ${summary.years.length ? groupYearCells(summary.years, totals) : emptyYearCells}
+      </tr>
+    `;
+  }).join("");
+
+  groupReportContent.innerHTML = `
+    <div class="group-report-dashboard">
+      <div class="group-kpis">
+        <div><strong>${summary.products.length.toLocaleString("ko-KR")}</strong><span>전체 제품</span></div>
+        <div><strong>${selectedProducts.length.toLocaleString("ko-KR")}</strong><span>선택 제품</span></div>
+        <div><strong>${summary.ingredientCount.toLocaleString("ko-KR")}</strong><span>고유 성분</span></div>
+        <div><strong>${selectedCompositions.length.toLocaleString("ko-KR")}</strong><span>선택 성분조합</span></div>
+        <div><strong>${selectedDoses.length.toLocaleString("ko-KR")}</strong><span>선택 세부용량</span></div>
+      </div>
+
+      <section class="group-section">
+        <header><h2>선택 결과 연도별 총합 생산/수입실적</h2></header>
+        <div class="group-table-wrap">
+          <table class="result-table group-table">
+            <thead><tr>${yearHeaders}</tr></thead>
+            <tbody><tr>${summary.years.length ? groupYearCells(summary.years, selectedYears) : emptyYearCells}</tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="group-section">
+        <header><h2>성분 조합별 집계</h2></header>
+        <div class="group-table-wrap">
+          <table class="result-table group-table">
+            <thead>
+              <tr>
+                <th>성분 조합</th>
+                <th>선택 제품 수</th>
+                <th>포장단위</th>
+                ${yearHeaders}
+              </tr>
+            </thead>
+            <tbody>${compositionRows || `<tr><td colspan="${3 + Math.max(summary.years.length, 1)}" class="table-message">선택된 성분 조합이 없습니다.</td></tr>`}</tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="group-section">
+        <header><h2>세부 용량 조합별 집계</h2></header>
+        <div class="group-table-wrap">
+          <table class="result-table group-table">
+            <thead>
+              <tr>
+                <th>성분 조합</th>
+                <th>세부 용량</th>
+                <th>선택 제품 수</th>
+                <th>포장단위</th>
+                ${yearHeaders}
+              </tr>
+            </thead>
+            <tbody>${doseRows || `<tr><td colspan="${4 + Math.max(summary.years.length, 1)}" class="table-message">선택된 세부 용량 조합이 없습니다.</td></tr>`}</tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="group-section">
+        <header><h2>제품 목록별 집계</h2></header>
+        <div class="group-table-wrap product-table-wrap">
+          <table class="result-table group-table">
+            <thead>
+              <tr>
+                <th>제품명</th>
+                <th>업체명</th>
+                <th>품목기준코드</th>
+                <th>성분 조합</th>
+                <th>세부 용량</th>
+                <th>포장단위</th>
+                ${yearHeaders}
+              </tr>
+            </thead>
+            <tbody>${productRows || `<tr><td colspan="${6 + Math.max(summary.years.length, 1)}" class="table-message">선택된 제품이 없습니다.</td></tr>`}</tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function openGroupReport() {
+  if (!groupState.summary || !groupReportModal) return;
+  groupReportModal.hidden = false;
+  renderGroupReportDashboard();
+}
+
+function closeGroupReport() {
+  if (groupReportModal) groupReportModal.hidden = true;
 }
 
 async function loadGroupDashboard() {
@@ -926,6 +1081,7 @@ async function loadGroupDashboard() {
   groupState.detailCache = {};
   groupState.summary = null;
   groupState.query = Object.fromEntries(new FormData(groupForm).entries());
+  closeGroupReport();
   renderGroupDashboard();
 
   try {
@@ -982,6 +1138,13 @@ function downloadGroupCsv() {
   const summary = groupState.summary;
   if (!summary) return;
   const selectedProducts = selectedGroupProducts();
+  const selectedSet = new Set(selectedProducts.map((product) => product.itemSeq));
+  const selectedCompositions = summary.compositions
+    .map((item) => ({ item, products: selectedProductsWithin(item.products, selectedSet) }))
+    .filter((entry) => entry.products.length);
+  const selectedDoses = summary.doses
+    .map((item) => ({ item, products: selectedProductsWithin(item.products, selectedSet) }))
+    .filter((entry) => entry.products.length);
   const selectedYears = {};
   selectedProducts.forEach((product) => addPerformanceTotals(selectedYears, product.performance));
   const lines = [];
@@ -991,48 +1154,46 @@ function downloadGroupCsv() {
     ["전체 제품", summary.products.length],
     ["선택 제품", selectedProducts.length],
     ["고유 성분", summary.ingredientCount],
-    ["성분 조합", summary.compositions.length],
-    ["세부 용량 조합", summary.doses.length]
+    ["선택 성분 조합", selectedCompositions.length],
+    ["선택 세부 용량 조합", selectedDoses.length]
   ].forEach((row) => lines.push(row.map(toCsvValue).join(",")));
   lines.push(["선택 결과 연도별 총합", "", ...groupYearCsvCells(summary.years, selectedYears)].join(","));
 
   lines.push("");
   lines.push([toCsvValue("성분 조합")].join(","));
-  lines.push(["선택여부", "성분 조합", "동일제품 수", "포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)].map(toCsvValue).join(","));
-  summary.compositions.forEach((item) => {
+  lines.push(["성분 조합", "선택 제품 수", "포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)].map(toCsvValue).join(","));
+  selectedCompositions.forEach(({ item, products }) => {
+    const aggregate = aggregateGroupProducts(products);
     lines.push([
-      toCsvValue(groupState.selected.compositions[item.key] !== false ? "선택" : "제외"),
       toCsvValue(item.key),
-      toCsvValue(item.products.length),
-      toCsvValue(Array.from(item.packages).join(" / ")),
-      ...groupYearCsvCells(summary.years, item.years)
+      toCsvValue(products.length),
+      toCsvValue(Array.from(aggregate.packages).join(" / ")),
+      ...groupYearCsvCells(summary.years, aggregate.years)
     ].join(","));
   });
 
   lines.push("");
   lines.push([toCsvValue("세부 용량 조합")].join(","));
-  lines.push(["선택여부", "성분 조합", "세부 용량", "동일제품 수", "포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)].map(toCsvValue).join(","));
-  summary.doses.forEach((item) => {
+  lines.push(["성분 조합", "세부 용량", "선택 제품 수", "포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)].map(toCsvValue).join(","));
+  selectedDoses.forEach(({ item, products }) => {
+    const aggregate = aggregateGroupProducts(products);
     lines.push([
-      toCsvValue(groupState.selected.doses[item.key] !== false ? "선택" : "제외"),
       toCsvValue(item.compositionKey),
       toCsvValue(item.dose),
-      toCsvValue(item.products.length),
-      toCsvValue(Array.from(item.packages).join(" / ")),
-      ...groupYearCsvCells(summary.years, item.years)
+      toCsvValue(products.length),
+      toCsvValue(Array.from(aggregate.packages).join(" / ")),
+      ...groupYearCsvCells(summary.years, aggregate.years)
     ].join(","));
   });
 
   lines.push("");
   lines.push([toCsvValue("제품 목록")].join(","));
-  const headers = ["선택여부", "제품명", "업체명", "품목기준코드", "성분 조합", "세부 용량", "단위용량", "제품 포장단위", "포장정보", ...summary.years.map((year) => `${year}년 생산/수입실적`)];
+  const headers = ["제품명", "업체명", "품목기준코드", "성분 조합", "세부 용량", "단위용량", "제품 포장단위", "포장정보", ...summary.years.map((year) => `${year}년 생산/수입실적`)];
   lines.push(headers.map(toCsvValue).join(","));
-  summary.products.forEach((product) => {
-    const selected = selectedProducts.some((item) => item.itemSeq === product.itemSeq);
+  selectedProducts.forEach((product) => {
     const totals = {};
     addPerformanceTotals(totals, product.performance);
     lines.push([
-      toCsvValue(selected ? "선택" : "제외"),
       toCsvValue(product.itemName),
       toCsvValue(product.entpName),
       toCsvValue(product.itemSeq),
@@ -2321,9 +2482,8 @@ function renderCompareSlot(slot) {
   const pageStart = slot.total && slot.rows.length ? (slot.page - 1) * slot.pageSize + 1 : 0;
   const pageEnd = slot.total && slot.rows.length ? pageStart + slot.rows.length - 1 : 0;
   const external = isExternalCompare(slot);
-  const detailView = Boolean(slot.detailView && slot.selectedSeq);
   return `
-    <section class="compare-slot ${index === 0 ? "active" : ""} ${detailView ? "detail-view" : ""}" data-slot-id="${escapeHtml(slot.id)}">
+    <section class="compare-slot ${index === 0 ? "active" : ""}" data-slot-id="${escapeHtml(slot.id)}">
       <header class="compare-slot-head">
         <div>
           <h2>${escapeHtml(compareSlotTitle(slot))}</h2>
@@ -2334,36 +2494,34 @@ function renderCompareSlot(slot) {
           ${compareState.slots.length > 1 ? `<button type="button" data-compare-remove aria-label="${escapeHtml(compareSlotTitle(slot))} 닫기">×</button>` : ""}
         </div>
       </header>
-      ${detailView ? renderCompareDetailScreen(slot) : `
-        ${external ? renderExternalCompareForm(slot) : renderCompareForm(slot)}
-        ${slot.notice ? `<p class="compare-notice">${escapeHtml(slot.notice)}</p>` : ""}
-        <div class="compare-pager">
-          <button type="button" data-compare-page="prev" ${slot.page <= 1 ? "disabled" : ""}>이전</button>
-          <span>${slot.page.toLocaleString("ko-KR")} / ${slot.totalPages.toLocaleString("ko-KR")}</span>
-          <button type="button" data-compare-page="next" ${slot.page >= slot.totalPages ? "disabled" : ""}>다음</button>
-        </div>
-        <div class="compare-result-wrap">
-          <table class="result-table compare-result-table">
-            <thead>
-              <tr>
-                ${
-                  external
-                    ? renderExternalCompareHeaders(slot)
-                    : `
-                      <th>제품명</th>
-                      <th>업체명</th>
-                      <th>주성분</th>
-                      <th>단위용량</th>
-                      <th>전문/일반</th>
-                      <th>허가일</th>
-                    `
-                }
-              </tr>
-            </thead>
-            <tbody>${external ? renderExternalCompareRows(slot) : renderCompareRows(slot)}</tbody>
-          </table>
-        </div>
-      `}
+      ${external ? renderExternalCompareForm(slot) : renderCompareForm(slot)}
+      ${slot.notice ? `<p class="compare-notice">${escapeHtml(slot.notice)}</p>` : ""}
+      <div class="compare-pager">
+        <button type="button" data-compare-page="prev" ${slot.page <= 1 ? "disabled" : ""}>이전</button>
+        <span>${slot.page.toLocaleString("ko-KR")} / ${slot.totalPages.toLocaleString("ko-KR")}</span>
+        <button type="button" data-compare-page="next" ${slot.page >= slot.totalPages ? "disabled" : ""}>다음</button>
+      </div>
+      <div class="compare-result-wrap">
+        <table class="result-table compare-result-table">
+          <thead>
+            <tr>
+              ${
+                external
+                  ? renderExternalCompareHeaders(slot)
+                  : `
+                    <th>제품명</th>
+                    <th>업체명</th>
+                    <th>주성분</th>
+                    <th>단위용량</th>
+                    <th>전문/일반</th>
+                    <th>허가일</th>
+                  `
+              }
+            </tr>
+          </thead>
+          <tbody>${external ? renderExternalCompareRows(slot) : renderCompareRows(slot)}</tbody>
+        </table>
+      </div>
     </section>
   `;
 }
@@ -2424,6 +2582,43 @@ function downloadCompareSlotCsv(slot) {
   setTimeout(() => URL.revokeObjectURL(url), 250);
 }
 
+function renderCompareSharedDetail() {
+  const selectedSlots = compareState.slots.filter((slot) => {
+    if (!slot.selectedSeq) return false;
+    return isExternalCompare(slot) ? externalCompareSelectedRow(slot) : compareSelectedDrug(slot);
+  });
+
+  if (!selectedSlots.length) {
+    return `
+      <section class="compare-shared-panel empty">
+        <div class="compare-detail-empty">검색 결과에서 비교할 제품을 선택하세요.</div>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="compare-shared-panel">
+      <header>
+        <div>
+          <h2>선택 제품 상세 비교</h2>
+          <p>${selectedSlots.length.toLocaleString("ko-KR")}개 비교 세트의 선택 제품을 한곳에 모아 봅니다.</p>
+        </div>
+      </header>
+      <div class="compare-shared-grid">
+        ${selectedSlots.map((slot) => `
+          <section class="compare-shared-card" data-slot-id="${escapeHtml(slot.id)}">
+            <div class="compare-shared-card-head">
+              <strong>${escapeHtml(compareSlotTitle(slot))}</strong>
+              <span>${escapeHtml(compareKindLabel(slot.kind))}</span>
+            </div>
+            ${isExternalCompare(slot) ? renderExternalCompareDetail(slot) : renderCompareDetail(slot)}
+          </section>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function renderCompareSlots() {
   if (!compareSlots) return;
   const title = compareWorkspace?.querySelector(".compare-header h1");
@@ -2431,6 +2626,9 @@ function renderCompareSlots() {
   if (title) title.textContent = `${compareKindLabel(compareState.kind)} 제품 간 비교`;
   if (description) description.textContent = "최대 5개 비교 세트를 나란히 검색하고 상세정보를 비교합니다.";
   compareSlots.innerHTML = compareState.slots.map((slot) => renderCompareSlot(slot)).join("");
+  if (compareSharedDetail) {
+    compareSharedDetail.innerHTML = renderCompareSharedDetail();
+  }
   if (addCompareSlotButton) {
     addCompareSlotButton.disabled = compareState.slots.length >= compareSlotLimit;
     addCompareSlotButton.textContent = "+ 비교 세트 추가하기";
@@ -3842,7 +4040,6 @@ if (compareSlots) {
 
     const retryButton = event.target.closest("[data-compare-retry-detail]");
     if (retryButton) {
-      slot.detailView = true;
       if (isExternalCompare(slot)) {
         loadExternalCompareDetail(slot.id, retryButton.dataset.compareRetryDetail || slot.selectedSeq, { force: true });
       } else {
@@ -3854,7 +4051,6 @@ if (compareSlots) {
     const selectedRow = event.target.closest("[data-compare-select]");
     if (selectedRow) {
       slot.selectedSeq = selectedRow.dataset.compareSelect;
-      slot.detailView = true;
       renderCompareSlots();
       if (isExternalCompare(slot)) {
         loadExternalCompareDetail(slot.id, slot.selectedSeq);
@@ -3943,6 +4139,7 @@ if (groupForm) {
       groupState.error = "";
       groupState.progress = "";
       groupState.selected = { compositions: {}, doses: {}, products: {} };
+      closeGroupReport();
       renderGroupDashboard();
     }, 0);
   });
@@ -3977,13 +4174,32 @@ if (groupBackButton) {
     groupState.step = "setup";
     groupState.loading = false;
     groupState.error = "";
+    closeGroupReport();
     renderGroupDashboard();
   });
 }
 
 if (groupCsvButton) {
   groupCsvButton.addEventListener("click", () => {
+    openGroupReport();
+  });
+}
+
+if (groupReportCsvButton) {
+  groupReportCsvButton.addEventListener("click", () => {
     downloadGroupCsv();
+  });
+}
+
+if (groupReportCloseButton) {
+  groupReportCloseButton.addEventListener("click", () => {
+    closeGroupReport();
+  });
+}
+
+if (groupReportModal) {
+  groupReportModal.addEventListener("click", (event) => {
+    if (event.target === groupReportModal) closeGroupReport();
   });
 }
 

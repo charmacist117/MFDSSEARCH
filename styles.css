@@ -919,10 +919,6 @@ button:focus-visible {
   border-color: #9ccbd5;
 }
 
-.compare-slot.detail-view {
-  min-width: min(860px, calc(100vw - 48px));
-}
-
 .compare-slot-head {
   display: flex;
   align-items: start;
@@ -1124,6 +1120,78 @@ button:focus-visible {
   text-align: center;
 }
 
+.compare-shared-detail {
+  margin-top: 16px;
+}
+
+.compare-shared-panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.compare-shared-panel.empty {
+  background: #fff;
+}
+
+.compare-shared-panel > header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfcfd;
+}
+
+.compare-shared-panel h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+
+.compare-shared-panel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compare-shared-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  align-items: start;
+}
+
+.compare-shared-card {
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+
+.compare-shared-card:last-child {
+  border-right: 0;
+}
+
+.compare-shared-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #f6f9fa;
+}
+
+.compare-shared-card-head strong {
+  color: var(--teal-dark);
+  font-size: 13px;
+}
+
+.compare-shared-card-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.compare-shared-card .compare-detail-panel {
+  min-height: 520px;
+  box-shadow: none;
+}
+
 .group-workspace {
   min-height: calc(100vh - 89px);
   padding: 24px;
@@ -1170,6 +1238,138 @@ button:focus-visible {
 .group-dashboard {
   display: grid;
   gap: 16px;
+}
+
+.group-tree-section {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.group-tree-section > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfcfd;
+}
+
+.group-tree-section h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+
+.group-tree-section p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.group-tree-selectors {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.group-tree-selectors label,
+.group-tree-node,
+.group-tree-product {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.group-tree-selectors label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.group-tree-wrap {
+  max-height: calc(100vh - 230px);
+  min-height: 360px;
+  overflow: auto;
+}
+
+.group-tree-table {
+  min-width: 1060px;
+  font-size: 12px;
+}
+
+.group-tree-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.group-tree-table th:nth-child(1) {
+  width: 30%;
+}
+
+.group-tree-table th:nth-child(2) {
+  width: 34%;
+}
+
+.group-tree-table th:nth-child(3) {
+  width: 36%;
+}
+
+.group-tree-cell {
+  vertical-align: top;
+  border-bottom-color: #d8e2e7;
+}
+
+.composition-cell {
+  background: #e9f6f8;
+}
+
+.dose-cell {
+  background: #f4fafb;
+}
+
+.product-cell {
+  background: #fff;
+}
+
+.group-tree-node,
+.group-tree-product {
+  width: 100%;
+  color: inherit;
+}
+
+.group-tree-node input,
+.group-tree-product input {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.group-tree-node span,
+.group-tree-product span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.group-tree-node strong,
+.group-tree-product strong {
+  color: var(--text);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.group-tree-node em,
+.group-tree-product em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .group-loading {
@@ -1257,6 +1457,96 @@ button:focus-visible {
 
 .group-table td {
   vertical-align: top;
+}
+
+.group-report-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(11, 23, 32, 0.42);
+}
+
+.group-report-modal[hidden] {
+  display: none;
+}
+
+.group-report-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1440px, calc(100vw - 48px));
+  height: min(860px, calc(100vh - 48px));
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 22px 60px rgba(11, 23, 32, 0.28);
+}
+
+.group-report-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfcfd;
+}
+
+.group-report-dialog h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.group-report-dialog p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.group-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.group-report-actions .csv-button,
+.group-report-actions .icon-button {
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--teal-dark);
+  cursor: pointer;
+  font-weight: 900;
+  padding: 0 12px;
+}
+
+.group-report-actions .csv-button {
+  border-color: var(--teal-dark);
+  background: var(--teal-dark);
+  color: #fff;
+}
+
+.group-report-actions .icon-button {
+  width: 36px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.group-report-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  background: var(--bg);
+}
+
+.group-report-dashboard {
+  display: grid;
+  gap: 16px;
 }
 
 .external-workspace {
@@ -2020,6 +2310,14 @@ body.table-only .detail-panel {
   .group-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .group-tree-section > header {
+    display: grid;
+  }
+
+  .group-tree-selectors {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2050,6 +2348,23 @@ body.table-only .detail-panel {
 
   .group-kpis {
     grid-template-columns: 1fr;
+  }
+
+  .group-report-modal {
+    padding: 10px;
+  }
+
+  .group-report-dialog {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+  }
+
+  .group-report-dialog > header {
+    display: grid;
+  }
+
+  .group-report-actions {
+    justify-content: space-between;
   }
 
   .filter-form {
