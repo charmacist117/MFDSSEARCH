@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>의약품 상세정보 대시보드</title>
-    <link rel="stylesheet" href="./styles.css?v=15">
+    <link rel="stylesheet" href="./styles.css?v=17">
   </head>
   <body>
     <nav class="category-tabs" aria-label="의약품 분류 선택">
@@ -25,7 +25,8 @@
 
     <nav class="workspace-tabs" aria-label="작업 선택" hidden>
       <button class="workspace-tab active" type="button" data-workspace-tab="search">의약품 검색하기</button>
-      <button class="workspace-tab" type="button" data-workspace-tab="compare">제품군 비교</button>
+      <button class="workspace-tab" type="button" data-workspace-tab="compare">제품 간 비교</button>
+      <button class="workspace-tab" type="button" data-workspace-tab="group">제품군 비교</button>
     </nav>
 
     <section id="homeWorkspace" class="home-workspace workspace-view">
@@ -291,12 +292,78 @@
           <span></span>
         </div>
         <div>
-          <h1>제품군 비교</h1>
-          <p>최대 5개 제품군을 나란히 검색하고 상세정보를 비교합니다</p>
+          <h1>제품 간 비교</h1>
+          <p>최대 5개 비교 세트를 나란히 검색하고 상세정보를 비교합니다</p>
         </div>
-        <button id="addCompareSlot" class="add-compare-button" type="button">+ 제품군 비교 추가하기</button>
+        <button id="addCompareSlot" class="add-compare-button" type="button">+ 비교 세트 추가하기</button>
       </header>
       <div id="compareSlots" class="compare-slots" aria-live="polite"></div>
+    </section>
+
+    <section id="groupWorkspace" class="workspace-view group-workspace" hidden>
+      <header class="dashboard-header group-header">
+        <div class="title-mark" aria-hidden="true">
+          <span></span>
+        </div>
+        <div>
+          <h1>제품군 비교</h1>
+          <p>검색 결과 전체를 성분 조합, 세부 용량, 포장단위, 생산/수입실적으로 집계합니다</p>
+        </div>
+        <div class="group-actions">
+          <button id="groupBackButton" class="secondary" type="button" hidden>뒤로가기</button>
+          <button id="groupCsvButton" class="csv-button" type="button" hidden>엑셀 다운로드</button>
+        </div>
+      </header>
+
+      <section id="groupSetupPanel" class="group-setup-panel">
+        <form id="groupForm" class="filter-form group-filter">
+          <label>
+            <span>제품명</span>
+            <input name="productName" autocomplete="off">
+          </label>
+          <label>
+            <span>업체명</span>
+            <input name="companyName" autocomplete="off">
+          </label>
+          <label>
+            <span>위탁제조업체</span>
+            <input name="contractManufacturer" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명1</span>
+            <input name="ingredient1" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명2</span>
+            <input name="ingredient2" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명3</span>
+            <input name="ingredient3" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명4</span>
+            <input name="ingredient4" autocomplete="off">
+          </label>
+          <label>
+            <span>성분명5</span>
+            <input name="ingredient5" autocomplete="off">
+          </label>
+          <div class="control-row checkbox-row export-only-row">
+            <span>수출용</span>
+            <label>
+              <input type="checkbox" name="exportOnlyMode" value="include" data-export-only-mode checked>
+              <span>포함</span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="primary" type="submit">제품군 대시보드 생성</button>
+            <button class="secondary" type="reset">초기화</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="groupDashboard" class="group-dashboard" hidden aria-live="polite"></section>
     </section>
 
     <section id="vetWorkspace" class="workspace-view external-workspace" hidden>
@@ -589,6 +656,6 @@
       </div>
     </div>
 
-    <script src="./app.js?v=45"></script>
+    <script src="./app.js?v=47"></script>
   </body>
 </html>

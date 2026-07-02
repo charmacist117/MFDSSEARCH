@@ -919,6 +919,10 @@ button:focus-visible {
   border-color: #9ccbd5;
 }
 
+.compare-slot.detail-view {
+  min-width: min(860px, calc(100vw - 48px));
+}
+
 .compare-slot-head {
   display: flex;
   align-items: start;
@@ -940,15 +944,36 @@ button:focus-visible {
   font-size: 12px;
 }
 
-.compare-slot-head button {
-  width: 28px;
-  height: 28px;
+.compare-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compare-slot-actions button {
+  min-height: 28px;
   border: 1px solid var(--border);
   border-radius: 3px;
   background: #fff;
+  color: var(--teal-dark);
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 9px;
+}
+
+.compare-slot-actions button:disabled {
+  cursor: not-allowed;
+  color: #9aa8af;
+  background: #f3f6f7;
+}
+
+.compare-slot-actions [data-compare-remove] {
+  width: 28px;
+  height: 28px;
   color: var(--muted);
   font-size: 18px;
   line-height: 1;
+  padding: 0;
 }
 
 .compare-filter {
@@ -1023,9 +1048,43 @@ button:focus-visible {
   top: 0;
 }
 
+.compare-detail-screen {
+  background: #fff;
+}
+
+.compare-detail-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #f6f9fa;
+}
+
+.compare-detail-toolbar button {
+  min-height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--teal-dark);
+  cursor: pointer;
+  font-weight: 900;
+  padding: 0 10px;
+}
+
+.compare-detail-toolbar span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .compare-detail-panel {
   min-height: 240px;
   background: #fff;
+}
+
+.compare-slot.detail-view .compare-detail-panel {
+  min-height: 520px;
 }
 
 .compare-detail-panel > header {
@@ -1063,6 +1122,141 @@ button:focus-visible {
   padding: 18px;
   color: var(--muted);
   text-align: center;
+}
+
+.group-workspace {
+  min-height: calc(100vh - 89px);
+  padding: 24px;
+}
+
+.group-header {
+  margin-bottom: 16px;
+}
+
+.group-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.group-actions button {
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--teal-dark);
+  cursor: pointer;
+  font-weight: 900;
+  padding: 0 12px;
+}
+
+.group-actions .csv-button {
+  border-color: var(--teal-dark);
+  background: var(--teal-dark);
+  color: #fff;
+}
+
+.group-setup-panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.group-filter {
+  padding: 16px;
+}
+
+.group-dashboard {
+  display: grid;
+  gap: 16px;
+}
+
+.group-loading {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.group-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.group-kpis div {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 14px;
+}
+
+.group-kpis strong {
+  display: block;
+  color: var(--teal-dark);
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.group-kpis span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.group-section {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.group-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfcfd;
+}
+
+.group-section h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.group-section label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.group-table-wrap {
+  max-height: 520px;
+  overflow: auto;
+}
+
+.product-table-wrap {
+  max-height: 680px;
+}
+
+.group-table {
+  min-width: 1080px;
+  font-size: 12px;
+}
+
+.group-table th {
+  top: 0;
+}
+
+.group-table td {
+  vertical-align: top;
 }
 
 .external-workspace {
@@ -1822,6 +2016,10 @@ body.table-only .detail-panel {
   .compare-slots {
     grid-auto-columns: minmax(340px, 86vw);
   }
+
+  .group-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -1844,6 +2042,14 @@ body.table-only .detail-panel {
 
   .compare-workspace {
     padding: 14px;
+  }
+
+  .group-workspace {
+    padding: 14px;
+  }
+
+  .group-kpis {
+    grid-template-columns: 1fr;
   }
 
   .filter-form {
