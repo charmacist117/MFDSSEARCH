@@ -87,7 +87,8 @@ const REVIEW_TYPE_OPTIONS = [
 let compareSlotSeed = 0;
 const compareState = {
   kind: "human",
-  slots: []
+  slots: [],
+  detailOverlayOpen: false
 };
 const groupState = {
   step: "setup",
@@ -648,6 +649,39 @@ function packageUnitText(drug) {
   return String(drug.packageUnit || drug.packageInfo || "").trim();
 }
 
+function productPermitLabel(product) {
+  return [product.entpName, product.itemName].filter(Boolean).join(" - ") || "-";
+}
+
+function productPermitList(products) {
+  return products.map(productPermitLabel).filter(Boolean).join("\n");
+}
+
+function renderMultilineText(value, className = "") {
+  const lines = String(value || "-")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const safeLines = lines.length ? lines : ["-"];
+  return `<span class="multiline-cell ${className}">${safeLines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}</span>`;
+}
+
+function componentLines(components, key) {
+  const items = Array.isArray(components) && components.length ? components : [{ name: "-", dose: "" }];
+  return items.map((component) => {
+    if (key === "dose") return component.dose || "-";
+    return component.name || "-";
+  });
+}
+
+function renderComponentLines(components, key) {
+  return renderMultilineText(componentLines(components, key).join("\n"), key === "dose" ? "dose-lines" : "ingredient-lines");
+}
+
+function componentCsvText(components, key) {
+  return componentLines(components, key).join("\n");
+}
+
 function addPerformanceTotals(target, performance) {
   if (!performance?.rows?.length) return;
   performance.rows.forEach((row) => {
@@ -711,6 +745,8 @@ function buildGroupSummary(rows) {
         key: doseKey,
         compositionKey,
         dose: doseKey,
+        components,
+        unitDose: drug.unitDose || "",
         products: [],
         packages: new Set(),
         years: {}
@@ -819,7 +855,7 @@ function renderGroupTreeRows(summary) {
                 <label class="group-tree-node">
                   <input type="checkbox" data-group-toggle="compositions" data-key="${escapeHtml(composition.key)}" ${groupState.selected.compositions[composition.key] !== false ? "checked" : ""}>
                   <span>
-                    <strong>${escapeHtml(composition.key)}</strong>
+                    <strong>${renderComponentLines(composition.components, "name")}</strong>
                     <em>${composition.products.length.toLocaleString("ko-KR")}개 제품 · ${compositionDoses.length.toLocaleString("ko-KR")}개 세부 용량</em>
                   </span>
                 </label>
@@ -830,7 +866,7 @@ function renderGroupTreeRows(summary) {
                 <label class="group-tree-node">
                   <input type="checkbox" data-group-toggle="doses" data-key="${escapeHtml(dose.key)}" ${groupState.selected.doses[dose.key] !== false ? "checked" : ""}>
                   <span>
-                    <strong>${escapeHtml(dose.dose || dose.key || "-")}</strong>
+                    <strong>${renderComponentLines(dose.components, "dose")}</strong>
                     <em>${dose.products.length.toLocaleString("ko-KR")}개 제품</em>
                   </span>
                 </label>
@@ -947,8 +983,9 @@ function renderGroupReportDashboard() {
     const aggregate = aggregateGroupProducts(products);
     return `
       <tr>
-        <td>${escapeHtml(item.key)}</td>
+        <td>${renderComponentLines(item.components, "name")}</td>
         <td>${products.length.toLocaleString("ko-KR")}</td>
+        <td>${renderMultilineText(productPermitList(products), "permit-product-lines")}</td>
         <td>${escapeHtml(Array.from(aggregate.packages).join(" / ") || "-")}</td>
         ${summary.years.length ? groupYearCells(summary.years, aggregate.years) : emptyYearCells}
       </tr>
@@ -959,9 +996,10 @@ function renderGroupReportDashboard() {
     const aggregate = aggregateGroupProducts(products);
     return `
       <tr>
-        <td>${escapeHtml(item.compositionKey)}</td>
-        <td>${escapeHtml(item.dose)}</td>
+        <td>${renderComponentLines(item.components, "name")}</td>
+        <td>${renderComponentLines(item.components, "dose")}</td>
         <td>${products.length.toLocaleString("ko-KR")}</td>
+        <td>${renderMultilineText(productPermitList(products), "permit-product-lines")}</td>
         <td>${escapeHtml(Array.from(aggregate.packages).join(" / ") || "-")}</td>
         ${summary.years.length ? groupYearCells(summary.years, aggregate.years) : emptyYearCells}
       </tr>
@@ -975,8 +1013,8 @@ function renderGroupReportDashboard() {
         <td>${escapeHtml(product.itemName || "-")}</td>
         <td>${escapeHtml(product.entpName || "-")}</td>
         <td>${escapeHtml(product.itemSeq || "-")}</td>
-        <td>${escapeHtml(product.compositionKey || "-")}</td>
-        <td>${escapeHtml(product.doseKey || "-")}</td>
+        <td>${renderComponentLines(product.components, "name")}</td>
+        <td>${renderComponentLines(product.components, "dose")}</td>
         <td>${escapeHtml(product.packageUnit || product.packageInfo || "-")}</td>
         ${summary.years.length ? groupYearCells(summary.years, totals) : emptyYearCells}
       </tr>
@@ -1011,11 +1049,12 @@ function renderGroupReportDashboard() {
               <tr>
                 <th>성분 조합</th>
                 <th>선택 제품 수</th>
+                <th>허가사-제품명</th>
                 <th>포장단위</th>
                 ${yearHeaders}
               </tr>
             </thead>
-            <tbody>${compositionRows || `<tr><td colspan="${3 + Math.max(summary.years.length, 1)}" class="table-message">선택된 성분 조합이 없습니다.</td></tr>`}</tbody>
+            <tbody>${compositionRows || `<tr><td colspan="${4 + Math.max(summary.years.length, 1)}" class="table-message">선택된 성분 조합이 없습니다.</td></tr>`}</tbody>
           </table>
         </div>
       </section>
@@ -1029,11 +1068,12 @@ function renderGroupReportDashboard() {
                 <th>성분 조합</th>
                 <th>세부 용량</th>
                 <th>선택 제품 수</th>
+                <th>허가사-제품명</th>
                 <th>포장단위</th>
                 ${yearHeaders}
               </tr>
             </thead>
-            <tbody>${doseRows || `<tr><td colspan="${4 + Math.max(summary.years.length, 1)}" class="table-message">선택된 세부 용량 조합이 없습니다.</td></tr>`}</tbody>
+            <tbody>${doseRows || `<tr><td colspan="${5 + Math.max(summary.years.length, 1)}" class="table-message">선택된 세부 용량 조합이 없습니다.</td></tr>`}</tbody>
           </table>
         </div>
       </section>
@@ -1161,12 +1201,13 @@ function downloadGroupCsv() {
 
   lines.push("");
   lines.push([toCsvValue("성분 조합")].join(","));
-  lines.push(["성분 조합", "선택 제품 수", "포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)].map(toCsvValue).join(","));
+  lines.push(["성분 조합", "선택 제품 수", "허가사-제품명", "포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)].map(toCsvValue).join(","));
   selectedCompositions.forEach(({ item, products }) => {
     const aggregate = aggregateGroupProducts(products);
     lines.push([
-      toCsvValue(item.key),
+      toCsvValue(componentCsvText(item.components, "name")),
       toCsvValue(products.length),
+      toCsvValue(productPermitList(products)),
       toCsvValue(Array.from(aggregate.packages).join(" / ")),
       ...groupYearCsvCells(summary.years, aggregate.years)
     ].join(","));
@@ -1174,13 +1215,14 @@ function downloadGroupCsv() {
 
   lines.push("");
   lines.push([toCsvValue("세부 용량 조합")].join(","));
-  lines.push(["성분 조합", "세부 용량", "선택 제품 수", "포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)].map(toCsvValue).join(","));
+  lines.push(["성분 조합", "세부 용량", "선택 제품 수", "허가사-제품명", "포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)].map(toCsvValue).join(","));
   selectedDoses.forEach(({ item, products }) => {
     const aggregate = aggregateGroupProducts(products);
     lines.push([
-      toCsvValue(item.compositionKey),
-      toCsvValue(item.dose),
+      toCsvValue(componentCsvText(item.components, "name")),
+      toCsvValue(componentCsvText(item.components, "dose")),
       toCsvValue(products.length),
+      toCsvValue(productPermitList(products)),
       toCsvValue(Array.from(aggregate.packages).join(" / ")),
       ...groupYearCsvCells(summary.years, aggregate.years)
     ].join(","));
@@ -1197,8 +1239,8 @@ function downloadGroupCsv() {
       toCsvValue(product.itemName),
       toCsvValue(product.entpName),
       toCsvValue(product.itemSeq),
-      toCsvValue(product.compositionKey),
-      toCsvValue(product.doseKey),
+      toCsvValue(componentCsvText(product.components, "name")),
+      toCsvValue(componentCsvText(product.components, "dose")),
       toCsvValue(product.unitDose),
       toCsvValue(product.packageUnit || product.packageInfo || ""),
       toCsvValue(product.packageInfo || ""),
@@ -1769,6 +1811,7 @@ async function loadExternalCompareResults(slotId, { resetPage = false } = {}) {
     slot.pageSize = Number(payload.pageSize || slot.rows.length || 10);
     slot.totalPages = Math.max(Number(payload.totalPages || 1), 1);
     slot.selectedSeq = slot.rows[0]?.__key || "";
+    compareState.detailOverlayOpen = Boolean(slot.selectedSeq);
     slot.detailView = false;
   } catch (error) {
     slot.rows = [];
@@ -2583,17 +2626,15 @@ function downloadCompareSlotCsv(slot) {
 }
 
 function renderCompareSharedDetail() {
+  if (!compareState.detailOverlayOpen) return "";
+
   const selectedSlots = compareState.slots.filter((slot) => {
     if (!slot.selectedSeq) return false;
     return isExternalCompare(slot) ? externalCompareSelectedRow(slot) : compareSelectedDrug(slot);
   });
 
   if (!selectedSlots.length) {
-    return `
-      <section class="compare-shared-panel empty">
-        <div class="compare-detail-empty">검색 결과에서 비교할 제품을 선택하세요.</div>
-      </section>
-    `;
+    return "";
   }
 
   return `
@@ -2603,6 +2644,7 @@ function renderCompareSharedDetail() {
           <h2>선택 제품 상세 비교</h2>
           <p>${selectedSlots.length.toLocaleString("ko-KR")}개 비교 세트의 선택 제품을 한곳에 모아 봅니다.</p>
         </div>
+        <button type="button" data-compare-close-detail aria-label="상세 비교 닫기">×</button>
       </header>
       <div class="compare-shared-grid">
         ${selectedSlots.map((slot) => `
@@ -2658,6 +2700,7 @@ async function loadCompareResults(slotId, { resetPage = false } = {}) {
     slot.pageSize = Number(payload.pageSize || slot.rows.length || 10);
     slot.totalPages = Math.max(Number(payload.totalPages || 1), 1);
     slot.selectedSeq = slot.rows[0]?.itemSeq || "";
+    compareState.detailOverlayOpen = Boolean(slot.selectedSeq);
     slot.detailView = false;
     slot.listLoading = false;
   } catch (error) {
@@ -4051,6 +4094,7 @@ if (compareSlots) {
     const selectedRow = event.target.closest("[data-compare-select]");
     if (selectedRow) {
       slot.selectedSeq = selectedRow.dataset.compareSelect;
+      compareState.detailOverlayOpen = true;
       renderCompareSlots();
       if (isExternalCompare(slot)) {
         loadExternalCompareDetail(slot.id, slot.selectedSeq);
@@ -4121,6 +4165,30 @@ if (compareSlots) {
       rangeGroup.querySelectorAll("button").forEach((button) => button.classList.remove("active"));
       rangeButton.classList.add("active");
       applyRangeToForm(slotEl.querySelector("form"), rangeButton.dataset.compareRange);
+    }
+  });
+}
+
+if (compareSharedDetail) {
+  compareSharedDetail.addEventListener("click", (event) => {
+    const closeButton = event.target.closest("[data-compare-close-detail]");
+    if (closeButton) {
+      compareState.detailOverlayOpen = false;
+      renderCompareSlots();
+      return;
+    }
+
+    const retryButton = event.target.closest("[data-compare-retry-detail]");
+    if (retryButton) {
+      const card = retryButton.closest("[data-slot-id]");
+      const slot = getCompareSlot(card?.dataset.slotId);
+      if (!slot) return;
+      compareState.detailOverlayOpen = true;
+      if (isExternalCompare(slot)) {
+        loadExternalCompareDetail(slot.id, retryButton.dataset.compareRetryDetail || slot.selectedSeq, { force: true });
+      } else {
+        loadCompareDetail(slot.id, retryButton.dataset.compareRetryDetail || slot.selectedSeq, { force: true });
+      }
     }
   });
 }

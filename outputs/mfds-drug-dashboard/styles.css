@@ -882,6 +882,10 @@ button:focus-visible {
   margin-bottom: 16px;
 }
 
+.compare-stage {
+  position: relative;
+}
+
 .add-compare-button {
   min-width: 178px;
   height: 36px;
@@ -1121,20 +1125,33 @@ button:focus-visible {
 }
 
 .compare-shared-detail {
-  margin-top: 16px;
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 25;
+  max-height: min(760px, calc(100vh - 160px));
+  overflow: auto;
+  background: var(--surface);
+  box-shadow: 0 22px 60px rgba(11, 23, 32, 0.24);
+}
+
+.compare-shared-detail:empty {
+  display: none;
 }
 
 .compare-shared-panel {
   border: 1px solid var(--border);
   background: var(--surface);
-  box-shadow: var(--shadow);
-}
-
-.compare-shared-panel.empty {
-  background: #fff;
+  box-shadow: none;
 }
 
 .compare-shared-panel > header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   background: #fbfcfd;
@@ -1149,6 +1166,20 @@ button:focus-visible {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+.compare-shared-panel [data-compare-close-detail] {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .compare-shared-grid {
@@ -1298,8 +1329,17 @@ button:focus-visible {
 }
 
 .group-tree-table {
-  min-width: 1060px;
+  width: 100%;
+  min-width: 980px;
+  table-layout: auto;
   font-size: 12px;
+}
+
+.group-tree-table th,
+.group-tree-table td {
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .group-tree-table th {
@@ -1349,8 +1389,8 @@ button:focus-visible {
   margin-top: 2px;
 }
 
-.group-tree-node span,
-.group-tree-product span {
+.group-tree-node > span,
+.group-tree-product > span {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -1360,7 +1400,8 @@ button:focus-visible {
 .group-tree-product strong {
   color: var(--text);
   line-height: 1.4;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .group-tree-node em,
@@ -1369,7 +1410,31 @@ button:focus-visible {
   font-size: 11px;
   font-style: normal;
   line-height: 1.35;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.multiline-cell {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-height: 1.45;
+}
+
+.multiline-cell > span {
+  min-width: 0;
+}
+
+.permit-product-lines {
+  min-width: 170px;
+  max-width: 360px;
+}
+
+.dose-lines {
+  min-width: 120px;
 }
 
 .group-loading {
@@ -1448,6 +1513,7 @@ button:focus-visible {
 
 .group-table {
   min-width: 1080px;
+  table-layout: auto;
   font-size: 12px;
 }
 
@@ -1457,6 +1523,9 @@ button:focus-visible {
 
 .group-table td {
   vertical-align: top;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .group-report-modal {
