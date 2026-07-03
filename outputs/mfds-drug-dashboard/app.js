@@ -143,6 +143,38 @@ function highlightText(value, keyword = activeSearchKeyword) {
     .join("");
 }
 
+function slashSeparatedLineHtml(value, keyword = activeSearchKeyword) {
+  const lines = String(value || "")
+    .split(/\s*\/\s*/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (!lines.length) return `<span class="muted">-</span>`;
+  return lines.map((item) => `<span>${highlightText(item, keyword)}</span>`).join("");
+}
+
+function ingredientValueHtml(value, keyword = activeSearchKeyword) {
+  return `<div class="ingredient-lines">${slashSeparatedLineHtml(value, keyword)}</div>`;
+}
+
+function shouldFormatIngredientField(label = "") {
+  return /성분|원료|유효성분|주성분|DUR성분/i.test(String(label || ""));
+}
+
+function tableCellHtml(value, column, title = "") {
+  const label = column?.label || "";
+  if (shouldFormatIngredientField(label) || (/원료|성분|함량/i.test(String(title || "")) && /^(?:0|name|ingredient|성분명|성분)$/i.test(String(column?.key || "")))) {
+    return ingredientValueHtml(value);
+  }
+  return highlightText(value || "");
+}
+
+function externalColumnCellHtml(value, column) {
+  if (shouldFormatIngredientField(column?.label) || (column?.key === "note" && String(value || "").includes("/"))) {
+    return ingredientValueHtml(value);
+  }
+  return escapeHtml(value || "-");
+}
+
 function snippet(value, limit = 82) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
   if (text.length <= limit) return text;
@@ -1514,7 +1546,7 @@ function renderExternalDashboard(kind) {
               if (column.key === "itemName") {
                 return `<td><button class="table-link" type="button" data-external-select="${escapeHtml(rowKey)}">${escapeHtml(value)}</button></td>`;
               }
-              return `<td>${escapeHtml(value)}</td>`;
+              return `<td>${externalColumnCellHtml(value, column)}</td>`;
             })
             .join("")}
         </tr>
@@ -1721,7 +1753,7 @@ function renderExternalCompareRows(slot) {
                   </td>
                 `;
               }
-              return `<td>${escapeHtml(value)}</td>`;
+              return `<td>${externalColumnCellHtml(value, column)}</td>`;
             })
             .join("")}
         </tr>
@@ -1946,11 +1978,7 @@ function compareSegmented(slot, label, field, options) {
 }
 
 function ingredientLineHtml(value) {
-  return String(value || "-")
-    .split(/\s*[/,]\s*/)
-    .filter(Boolean)
-    .map((item) => `<span>${escapeHtml(item)}</span>`)
-    .join("") || "-";
+  return slashSeparatedLineHtml(value);
 }
 
 function unitDoseLineHtml(value, loading = false) {
@@ -3061,11 +3089,6 @@ function renderResults() {
       const drug = rowWithCachedDetail(row);
       const selected = drug.itemSeq === state.selectedSeq ? "selected" : "";
       const rowNumber = drug.rowNumber || String((state.page - 1) * state.pageSize + index + 1);
-      const ingredientLines = String(drug.mainIngredient || "-")
-        .split(/\s*[/,]\s*/)
-        .filter(Boolean)
-        .map((item) => `<span>${escapeHtml(item)}</span>`)
-        .join("");
       
       const perfCellsHtml = perfYears
         .map((year) => `<td>${formatPerformanceYearCell(drug.performance, year)}</td>`)
@@ -3084,7 +3107,7 @@ function renderResults() {
             </div>
           </td>
           <td>${escapeHtml(drug.entpName || "-")}</td>
-          <td><div class="ingredient-lines">${ingredientLines || "-"}</div></td>
+          <td>${ingredientValueHtml(drug.mainIngredient)}</td>
           <td><div class="unit-dose-lines">${unitDoseLineHtml(drug.unitDose, state.unitDoseLoading && !drug.unitDose)}</div></td>
           <td>${escapeHtml(drug.etcOtc || "-")}</td>
           <td>${insurancePriceCellHtml(drug.insurancePrice)}</td>
@@ -3114,7 +3137,7 @@ function renderKeyValue(title, pairs) {
             ([key, value]) => `
               <div>
                 <dt>${escapeHtml(key)}</dt>
-                <dd>${highlightText(value)}</dd>
+                <dd>${shouldFormatIngredientField(key) ? ingredientValueHtml(value) : highlightText(value)}</dd>
               </div>
             `
           )
@@ -3138,7 +3161,7 @@ function renderTable(title, rows, columns) {
             .map(
               (row) => `
                 <tr>
-                  ${columns.map((column) => `<td>${highlightText(row[column.key] || "")}</td>`).join("")}
+                  ${columns.map((column) => `<td>${tableCellHtml(row[column.key] || "", column, title)}</td>`).join("")}
                 </tr>
               `
             )
