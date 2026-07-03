@@ -2087,43 +2087,13 @@ button:focus-visible {
   max-width: 100%;
 }
 
-.ingredient-pairs {
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.ingredient-pair {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(78px, max-content);
-  gap: 8px;
-  align-items: start;
-  min-width: 0;
-}
-
-.ingredient-pair-name,
-.ingredient-pair-dose {
-  min-width: 0;
-  overflow-wrap: break-word;
-}
-
-.ingredient-pair-name {
-  font-weight: 800;
-}
-
-.ingredient-pair-dose {
-  color: var(--muted);
-  text-align: right;
-  white-space: normal;
-}
-
 .ingredient-lines span,
 .unit-dose-lines span {
   display: block;
   min-width: 0;
   max-width: 100%;
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 .unit-dose-lines {

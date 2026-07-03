@@ -156,23 +156,7 @@ function splitSlashIngredientParts(value) {
     .filter(Boolean);
 }
 
-function ingredientPairRowsHtml(value, keyword = activeSearchKeyword) {
-  const parts = splitSlashIngredientParts(value).map((part) => parseIngredientPart(part));
-  if (!parts.length) return "";
-  if (!parts.some((part) => part.dose)) return "";
-  return parts
-    .map((part) => `
-      <span class="ingredient-pair">
-        <span class="ingredient-pair-name">${highlightText(part.name || "-", keyword)}</span>
-        <span class="ingredient-pair-dose">${part.dose ? highlightText(part.dose, keyword) : "<span class=\"muted\">-</span>"}</span>
-      </span>
-    `)
-    .join("");
-}
-
 function ingredientValueHtml(value, keyword = activeSearchKeyword) {
-  const pairRows = ingredientPairRowsHtml(value, keyword);
-  if (pairRows) return `<div class="ingredient-pairs">${pairRows}</div>`;
   return `<div class="ingredient-lines">${slashSeparatedLineHtml(value, keyword)}</div>`;
 }
 
