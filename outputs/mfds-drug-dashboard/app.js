@@ -144,15 +144,35 @@ function highlightText(value, keyword = activeSearchKeyword) {
 }
 
 function slashSeparatedLineHtml(value, keyword = activeSearchKeyword) {
-  const lines = String(value || "")
-    .split(/\s*\/\s*/g)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const lines = splitSlashIngredientParts(value);
   if (!lines.length) return `<span class="muted">-</span>`;
   return lines.map((item) => `<span>${highlightText(item, keyword)}</span>`).join("");
 }
 
+function splitSlashIngredientParts(value) {
+  return String(value || "")
+    .split(/\s*\/\s*/g)
+    .map((item) => item.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function ingredientPairRowsHtml(value, keyword = activeSearchKeyword) {
+  const parts = splitSlashIngredientParts(value).map((part) => parseIngredientPart(part));
+  if (!parts.length) return "";
+  if (!parts.some((part) => part.dose)) return "";
+  return parts
+    .map((part) => `
+      <span class="ingredient-pair">
+        <span class="ingredient-pair-name">${highlightText(part.name || "-", keyword)}</span>
+        <span class="ingredient-pair-dose">${part.dose ? highlightText(part.dose, keyword) : "<span class=\"muted\">-</span>"}</span>
+      </span>
+    `)
+    .join("");
+}
+
 function ingredientValueHtml(value, keyword = activeSearchKeyword) {
+  const pairRows = ingredientPairRowsHtml(value, keyword);
+  if (pairRows) return `<div class="ingredient-pairs">${pairRows}</div>`;
   return `<div class="ingredient-lines">${slashSeparatedLineHtml(value, keyword)}</div>`;
 }
 
