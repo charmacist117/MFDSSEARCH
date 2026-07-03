@@ -1328,41 +1328,65 @@ button:focus-visible {
   overflow: auto;
 }
 
-.group-tree-table {
-  width: 100%;
-  min-width: 980px;
-  table-layout: auto;
+.group-tree-grid {
+  min-width: 1080px;
   font-size: 12px;
 }
 
-.group-tree-table th,
-.group-tree-table td {
-  white-space: normal;
-  word-break: keep-all;
-  overflow-wrap: break-word;
-}
-
-.group-tree-table th {
+.group-tree-head {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.28fr) minmax(240px, 0.28fr) minmax(420px, 0.44fr);
+  border-bottom: 1px solid var(--border);
+  background: #eef3f5;
+  color: #263941;
+  font-weight: 900;
 }
 
-.group-tree-table th:nth-child(1) {
-  width: 30%;
+.group-tree-head > div {
+  min-height: 28px;
+  border-right: 1px solid var(--border);
+  padding: 7px 9px;
 }
 
-.group-tree-table th:nth-child(2) {
-  width: 34%;
+.group-tree-head > div:last-child {
+  border-right: 0;
 }
 
-.group-tree-table th:nth-child(3) {
-  width: 36%;
+.group-tree-body {
+  display: grid;
+}
+
+.group-tree-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.28fr) minmax(660px, 0.72fr);
+  border-bottom: 1px solid var(--border);
+}
+
+.group-tree-row:last-child {
+  border-bottom: 0;
+}
+
+.group-tree-branches {
+  display: grid;
+}
+
+.group-tree-branch {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.389fr) minmax(420px, 0.611fr);
+  border-bottom: 1px solid var(--border);
+}
+
+.group-tree-branch:last-child {
+  border-bottom: 0;
 }
 
 .group-tree-cell {
-  vertical-align: top;
-  border-bottom-color: #d8e2e7;
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid var(--border);
 }
 
 .composition-cell {
@@ -1375,6 +1399,7 @@ button:focus-visible {
 
 .product-cell {
   background: #fff;
+  border-right: 0;
 }
 
 .group-tree-node,
@@ -1412,6 +1437,16 @@ button:focus-visible {
   line-height: 1.35;
   word-break: keep-all;
   overflow-wrap: break-word;
+}
+
+.group-tree-products {
+  display: grid;
+  gap: 8px;
+}
+
+.group-tree-products.empty {
+  color: var(--muted);
+  font-weight: 800;
 }
 
 .multiline-cell {

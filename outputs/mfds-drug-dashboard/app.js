@@ -88,7 +88,8 @@ let compareSlotSeed = 0;
 const compareState = {
   kind: "human",
   slots: [],
-  detailOverlayOpen: false
+  detailOverlayOpen: false,
+  detailOverlaySlotId: ""
 };
 const groupState = {
   step: "setup",
@@ -819,50 +820,58 @@ function selectedProductsWithin(products, selectedSet) {
   return products.filter((product) => selectedSet.has(product.itemSeq));
 }
 
+function renderGroupProductList(products) {
+  if (!products.length) {
+    return `<div class="group-tree-products empty">제품이 없습니다.</div>`;
+  }
+  return `
+    <div class="group-tree-products">
+      ${products.map((product) => {
+        const productKey = String(product.itemSeq || "");
+        return `
+          <label class="group-tree-product">
+            <input type="checkbox" data-group-toggle="products" data-key="${escapeHtml(productKey)}" ${productKey && groupState.selected.products[productKey] !== false ? "checked" : ""}>
+            <span>
+              <strong>${escapeHtml(product.itemName || "-")}</strong>
+              <em>${escapeHtml([product.entpName, productKey && `품목기준코드 ${productKey}`].filter(Boolean).join(" · ") || "-")}</em>
+            </span>
+          </label>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
 function renderGroupTreeRows(summary) {
   if (!summary.compositions.length) {
-    return `<tr><td colspan="3" class="table-message">분석할 제품이 없습니다.</td></tr>`;
+    return `<div class="table-message">분석할 제품이 없습니다.</div>`;
   }
 
-  const rows = [];
-  summary.compositions.forEach((composition) => {
+  return summary.compositions.map((composition) => {
     const compositionDoses = summary.doses.filter((dose) => dose.compositionKey === composition.key);
     const visibleDoses = compositionDoses.length ? compositionDoses : [{
       key: `${composition.key}::no-dose`,
       compositionKey: composition.key,
       dose: "-",
+      components: composition.components,
       products: composition.products
     }];
-    const compositionRowCount = Math.max(visibleDoses.reduce((sum, dose) => sum + Math.max(dose.products.length, 1), 0), 1);
-    let compositionRendered = false;
 
-    visibleDoses.forEach((dose) => {
-      const products = dose.products.length ? dose.products : [{
-        itemSeq: "",
-        itemName: "-",
-        entpName: "",
-        doseKey: dose.key
-      }];
-      const doseRowCount = Math.max(products.length, 1);
-      let doseRendered = false;
-
-      products.forEach((product) => {
-        const productKey = String(product.itemSeq || "");
-        rows.push(`
-          <tr>
-            ${compositionRendered ? "" : `
-              <td class="group-tree-cell composition-cell" rowspan="${compositionRowCount}">
-                <label class="group-tree-node">
-                  <input type="checkbox" data-group-toggle="compositions" data-key="${escapeHtml(composition.key)}" ${groupState.selected.compositions[composition.key] !== false ? "checked" : ""}>
-                  <span>
-                    <strong>${renderComponentLines(composition.components, "name")}</strong>
-                    <em>${composition.products.length.toLocaleString("ko-KR")}개 제품 · ${compositionDoses.length.toLocaleString("ko-KR")}개 세부 용량</em>
-                  </span>
-                </label>
-              </td>
-            `}
-            ${doseRendered ? "" : `
-              <td class="group-tree-cell dose-cell" rowspan="${doseRowCount}">
+    return `
+      <section class="group-tree-row">
+        <div class="group-tree-cell composition-cell">
+          <label class="group-tree-node">
+            <input type="checkbox" data-group-toggle="compositions" data-key="${escapeHtml(composition.key)}" ${groupState.selected.compositions[composition.key] !== false ? "checked" : ""}>
+            <span>
+              <strong>${renderComponentLines(composition.components, "name")}</strong>
+              <em>${composition.products.length.toLocaleString("ko-KR")}개 제품 · ${compositionDoses.length.toLocaleString("ko-KR")}개 세부 용량</em>
+            </span>
+          </label>
+        </div>
+        <div class="group-tree-branches">
+          ${visibleDoses.map((dose) => `
+            <div class="group-tree-branch">
+              <div class="group-tree-cell dose-cell">
                 <label class="group-tree-node">
                   <input type="checkbox" data-group-toggle="doses" data-key="${escapeHtml(dose.key)}" ${groupState.selected.doses[dose.key] !== false ? "checked" : ""}>
                   <span>
@@ -870,26 +879,16 @@ function renderGroupTreeRows(summary) {
                     <em>${dose.products.length.toLocaleString("ko-KR")}개 제품</em>
                   </span>
                 </label>
-              </td>
-            `}
-            <td class="group-tree-cell product-cell">
-              <label class="group-tree-product">
-                <input type="checkbox" data-group-toggle="products" data-key="${escapeHtml(productKey)}" ${productKey && groupState.selected.products[productKey] !== false ? "checked" : ""}>
-                <span>
-                  <strong>${escapeHtml(product.itemName || "-")}</strong>
-                  <em>${escapeHtml([product.entpName, productKey && `품목기준코드 ${productKey}`].filter(Boolean).join(" · ") || "-")}</em>
-                </span>
-              </label>
-            </td>
-          </tr>
-        `);
-        compositionRendered = true;
-        doseRendered = true;
-      });
-    });
-  });
-
-  return rows.join("");
+              </div>
+              <div class="group-tree-cell product-cell">
+                ${renderGroupProductList(dose.products)}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      </section>
+    `;
+  }).join("");
 }
 
 function renderGroupDashboard() {
@@ -941,16 +940,14 @@ function renderGroupDashboard() {
         </div>
       </header>
       <div class="group-tree-wrap">
-        <table class="result-table group-tree-table">
-          <thead>
-            <tr>
-              <th>성분조합</th>
-              <th>세부용량조합</th>
-              <th>목록</th>
-            </tr>
-          </thead>
-          <tbody>${renderGroupTreeRows(summary)}</tbody>
-        </table>
+        <div class="group-tree-grid">
+          <div class="group-tree-head">
+            <div>성분조합</div>
+            <div>세부용량조합</div>
+            <div>목록</div>
+          </div>
+          <div class="group-tree-body">${renderGroupTreeRows(summary)}</div>
+        </div>
       </div>
     </section>
   `;
@@ -1230,7 +1227,7 @@ function downloadGroupCsv() {
 
   lines.push("");
   lines.push([toCsvValue("제품 목록")].join(","));
-  const headers = ["제품명", "업체명", "품목기준코드", "성분 조합", "세부 용량", "단위용량", "제품 포장단위", "포장정보", ...summary.years.map((year) => `${year}년 생산/수입실적`)];
+  const headers = ["제품명", "업체명", "품목기준코드", "성분 조합", "세부 용량", "단위용량", "제품 포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)];
   lines.push(headers.map(toCsvValue).join(","));
   selectedProducts.forEach((product) => {
     const totals = {};
@@ -1243,7 +1240,6 @@ function downloadGroupCsv() {
       toCsvValue(componentCsvText(product.components, "dose")),
       toCsvValue(product.unitDose),
       toCsvValue(product.packageUnit || product.packageInfo || ""),
-      toCsvValue(product.packageInfo || ""),
       ...groupYearCsvCells(summary.years, totals)
     ].join(","));
   });
@@ -1811,7 +1807,8 @@ async function loadExternalCompareResults(slotId, { resetPage = false } = {}) {
     slot.pageSize = Number(payload.pageSize || slot.rows.length || 10);
     slot.totalPages = Math.max(Number(payload.totalPages || 1), 1);
     slot.selectedSeq = slot.rows[0]?.__key || "";
-    compareState.detailOverlayOpen = Boolean(slot.selectedSeq);
+    compareState.detailOverlayOpen = false;
+    compareState.detailOverlaySlotId = "";
     slot.detailView = false;
   } catch (error) {
     slot.rows = [];
@@ -2526,7 +2523,7 @@ function renderCompareSlot(slot) {
   const pageEnd = slot.total && slot.rows.length ? pageStart + slot.rows.length - 1 : 0;
   const external = isExternalCompare(slot);
   return `
-    <section class="compare-slot ${index === 0 ? "active" : ""}" data-slot-id="${escapeHtml(slot.id)}">
+    <section class="compare-slot ${index === 0 ? "active" : ""} ${slot.detailView ? "detail-view" : ""}" data-slot-id="${escapeHtml(slot.id)}">
       <header class="compare-slot-head">
         <div>
           <h2>${escapeHtml(compareSlotTitle(slot))}</h2>
@@ -2537,6 +2534,7 @@ function renderCompareSlot(slot) {
           ${compareState.slots.length > 1 ? `<button type="button" data-compare-remove aria-label="${escapeHtml(compareSlotTitle(slot))} 닫기">×</button>` : ""}
         </div>
       </header>
+      ${slot.detailView ? renderCompareDetailScreen(slot) : `
       ${external ? renderExternalCompareForm(slot) : renderCompareForm(slot)}
       ${slot.notice ? `<p class="compare-notice">${escapeHtml(slot.notice)}</p>` : ""}
       <div class="compare-pager">
@@ -2565,6 +2563,7 @@ function renderCompareSlot(slot) {
           <tbody>${external ? renderExternalCompareRows(slot) : renderCompareRows(slot)}</tbody>
         </table>
       </div>
+      `}
     </section>
   `;
 }
@@ -2594,7 +2593,7 @@ function downloadCompareSlotCsv(slot) {
       });
     });
     const perfYears = Array.from(years).sort();
-    headers = ["제품명", "업체명", "성분 조합", "단위용량", "전문/일반", "효능효과", "용법용량", "제품 포장단위", "포장정보", "허가일", ...perfYears.map((year) => `${year}년 생산/수입실적`)];
+    headers = ["제품명", "업체명", "성분 조합", "주성분영문명", "단위용량", "전문/일반", "효능효과", "용법용량", "제품 포장단위", "허가일", ...perfYears.map((year) => `${year}년 생산/수입실적`)];
     lines.push(headers.map(toCsvValue).join(","));
     rows.forEach((drug) => {
       const totals = {};
@@ -2603,12 +2602,12 @@ function downloadCompareSlotCsv(slot) {
         toCsvValue(drug.itemName),
         toCsvValue(drug.entpName),
         toCsvValue(drug.mainIngredient),
+        toCsvValue(drug.mainIngredientEng),
         toCsvValue(drug.unitDose),
         toCsvValue(drug.etcOtc),
         toCsvValue(drug.efficacy),
         toCsvValue(drug.dosage),
         toCsvValue(drug.packageUnit || drug.packageInfo || ""),
-        toCsvValue(drug.packageInfo || ""),
         toCsvValue(drug.permitDate),
         ...groupYearCsvCells(perfYears, totals)
       ].join(","));
@@ -2625,13 +2624,34 @@ function downloadCompareSlotCsv(slot) {
   setTimeout(() => URL.revokeObjectURL(url), 250);
 }
 
-function renderCompareSharedDetail() {
-  if (!compareState.detailOverlayOpen) return "";
-
-  const selectedSlots = compareState.slots.filter((slot) => {
+function selectedCompareDetailSlots() {
+  return compareState.slots.filter((slot) => {
     if (!slot.selectedSeq) return false;
     return isExternalCompare(slot) ? externalCompareSelectedRow(slot) : compareSelectedDrug(slot);
   });
+}
+
+function positionCompareSharedDetail() {
+  if (!compareSharedDetail || !compareSlots) return;
+  const selectedSlot = selectedCompareDetailSlots()[0];
+  if (!compareState.detailOverlayOpen || !selectedSlot || !compareSharedDetail.innerHTML.trim()) {
+    compareSharedDetail.style.left = "";
+    compareSharedDetail.style.width = "";
+    return;
+  }
+  const slotEl = compareSlots.querySelector(`[data-slot-id="${CSS.escape(selectedSlot.id)}"]`);
+  const stageEl = compareSharedDetail.parentElement;
+  if (!slotEl || !stageEl) return;
+  const slotRect = slotEl.getBoundingClientRect();
+  const stageRect = stageEl.getBoundingClientRect();
+  compareSharedDetail.style.left = `${Math.max(0, slotRect.left - stageRect.left)}px`;
+  compareSharedDetail.style.width = `${slotRect.width}px`;
+}
+
+function renderCompareSharedDetail() {
+  if (!compareState.detailOverlayOpen) return "";
+
+  const selectedSlots = selectedCompareDetailSlots();
 
   if (!selectedSlots.length) {
     return "";
@@ -2669,7 +2689,7 @@ function renderCompareSlots() {
   if (description) description.textContent = "최대 5개 비교 세트를 나란히 검색하고 상세정보를 비교합니다.";
   compareSlots.innerHTML = compareState.slots.map((slot) => renderCompareSlot(slot)).join("");
   if (compareSharedDetail) {
-    compareSharedDetail.innerHTML = renderCompareSharedDetail();
+    compareSharedDetail.innerHTML = "";
   }
   if (addCompareSlotButton) {
     addCompareSlotButton.disabled = compareState.slots.length >= compareSlotLimit;
@@ -2700,7 +2720,8 @@ async function loadCompareResults(slotId, { resetPage = false } = {}) {
     slot.pageSize = Number(payload.pageSize || slot.rows.length || 10);
     slot.totalPages = Math.max(Number(payload.totalPages || 1), 1);
     slot.selectedSeq = slot.rows[0]?.itemSeq || "";
-    compareState.detailOverlayOpen = Boolean(slot.selectedSeq);
+    compareState.detailOverlayOpen = false;
+    compareState.detailOverlaySlotId = "";
     slot.detailView = false;
     slot.listLoading = false;
   } catch (error) {
@@ -3394,18 +3415,17 @@ function downloadCsvClientSide(category = "human") {
       ["contractManufacturer", "위탁제조업체"],
       ["reviewType", "허가심사유형"],
       ["mainIngredient", "주성분"],
+      ["mainIngredientEng", "주성분영문명"],
       ["unitDose", "단위용량"],
       ["etcOtc", "전문/일반"],
       ["efficacy", "효능효과"],
       ["dosage", "용법용량"],
       ["insurancePrice", "보험약가"],
-      ["packageInfo", "포장정보"],
       ["packageUnit", "제품 포장단위"],
       ["permitDate", "허가일"],
       ["itemCategory", "품목구분"],
       ["cancelStatus", "취소/취하"],
       ["makeMaterial", "완제/원료"],
-      ["mainIngredientEng", "주성분영문명"],
       ["additives", "첨가제"],
       ["standardCode", "표준코드"],
       ["atcCode", "ATC코드"],
@@ -3636,18 +3656,17 @@ async function downloadCsvAllResults(category = "human") {
         ["contractManufacturer", "위탁제조업체"],
         ["reviewType", "허가심사유형"],
         ["mainIngredient", "주성분"],
+        ["mainIngredientEng", "주성분영문명"],
         ["unitDose", "단위용량"],
         ["etcOtc", "전문/일반"],
         ["efficacy", "효능효과"],
         ["dosage", "용법용량"],
         ["insurancePrice", "보험약가"],
-        ["packageInfo", "포장정보"],
         ["packageUnit", "제품 포장단위"],
         ["permitDate", "허가일"],
         ["itemCategory", "품목구분"],
         ["cancelStatus", "취소/취하"],
         ["makeMaterial", "완제/원료"],
-        ["mainIngredientEng", "주성분영문명"],
         ["additives", "첨가제"],
         ["standardCode", "표준코드"],
         ["atcCode", "ATC코드"],
@@ -4094,7 +4113,9 @@ if (compareSlots) {
     const selectedRow = event.target.closest("[data-compare-select]");
     if (selectedRow) {
       slot.selectedSeq = selectedRow.dataset.compareSelect;
-      compareState.detailOverlayOpen = true;
+      slot.detailView = true;
+      compareState.detailOverlayOpen = false;
+      compareState.detailOverlaySlotId = "";
       renderCompareSlots();
       if (isExternalCompare(slot)) {
         loadExternalCompareDetail(slot.id, slot.selectedSeq);
