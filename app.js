@@ -104,6 +104,10 @@ const groupState = {
     compositions: {},
     doses: {},
     products: {}
+  },
+  expanded: {
+    compositions: {},
+    doses: {}
   }
 };
 const externalStates = {
@@ -890,6 +894,18 @@ function renderGroupProductList(products) {
   `;
 }
 
+function isGroupExpanded(group, key) {
+  return groupState.expanded[group]?.[key] === true;
+}
+
+function renderGroupExpandButton(group, key, expanded) {
+  return `
+    <button class="group-expand-button" type="button" data-group-expand="${escapeHtml(group)}" data-key="${escapeHtml(key)}" aria-expanded="${expanded ? "true" : "false"}" aria-label="${expanded ? "접기" : "펼치기"}">
+      <span class="group-expand-cue" aria-hidden="true"></span>
+    </button>
+  `;
+}
+
 function renderGroupTreeRows(summary) {
   if (!summary.compositions.length) {
     return `<div class="table-message">분석할 제품이 없습니다.</div>`;
@@ -897,6 +913,8 @@ function renderGroupTreeRows(summary) {
 
   return summary.compositions.map((composition) => {
     const compositionDoses = summary.doses.filter((dose) => dose.compositionKey === composition.key);
+    const compositionKey = String(composition.key || "");
+    const compositionOpen = isGroupExpanded("compositions", compositionKey);
     const visibleDoses = compositionDoses.length ? compositionDoses : [{
       key: `${composition.key}::no-dose`,
       compositionKey: composition.key,
@@ -906,34 +924,44 @@ function renderGroupTreeRows(summary) {
     }];
 
     return `
-      <section class="group-tree-row">
-        <div class="group-tree-cell composition-cell">
+      <section class="group-accordion-item group-composition-item ${compositionOpen ? "is-open" : ""}">
+        <div class="group-composition-summary">
           ${renderGroupTreeNode(
             "compositions",
-            composition.key,
-            groupState.selected.compositions[composition.key] !== false,
+            compositionKey,
+            groupState.selected.compositions[compositionKey] !== false,
             renderComponentLines(composition.components, "name"),
             `${composition.products.length.toLocaleString("ko-KR")}개 제품 · ${compositionDoses.length.toLocaleString("ko-KR")}개 세부 용량`
           )}
+          ${renderGroupExpandButton("compositions", compositionKey, compositionOpen)}
         </div>
-        <div class="group-tree-branches">
-          ${visibleDoses.map((dose) => `
-            <div class="group-tree-branch">
-              <div class="group-tree-cell dose-cell">
+        ${compositionOpen ? `
+        <div class="group-dose-list">
+          ${visibleDoses.map((dose) => {
+            const doseKey = String(dose.key || "");
+            const doseOpen = isGroupExpanded("doses", doseKey);
+            return `
+            <section class="group-accordion-item group-dose-item ${doseOpen ? "is-open" : ""}">
+              <div class="group-dose-summary">
                 ${renderGroupTreeNode(
                   "doses",
-                  dose.key,
-                  groupState.selected.doses[dose.key] !== false,
+                  doseKey,
+                  groupState.selected.doses[doseKey] !== false,
                   renderComponentLines(dose.components, "dose"),
                   `${dose.products.length.toLocaleString("ko-KR")}개 제품`
                 )}
+                ${renderGroupExpandButton("doses", doseKey, doseOpen)}
               </div>
-              <div class="group-tree-cell product-cell">
+              ${doseOpen ? `
+              <div class="group-product-panel">
                 ${renderGroupProductList(dose.products)}
               </div>
-            </div>
-          `).join("")}
+              ` : ""}
+            </section>
+          `;
+          }).join("")}
         </div>
+        ` : ""}
       </section>
     `;
   }).join("");
@@ -989,11 +1017,6 @@ function renderGroupDashboard() {
       </header>
       <div class="group-tree-wrap">
         <div class="group-tree-grid">
-          <div class="group-tree-head">
-            <div>성분조합</div>
-            <div>세부용량조합</div>
-            <div>목록</div>
-          </div>
           <div class="group-tree-body">${renderGroupTreeRows(summary)}</div>
         </div>
       </div>
@@ -1165,6 +1188,7 @@ async function loadGroupDashboard() {
   groupState.rows = [];
   groupState.detailCache = {};
   groupState.summary = null;
+  groupState.expanded = { compositions: {}, doses: {} };
   groupState.query = Object.fromEntries(new FormData(groupForm).entries());
   closeGroupReport();
   renderGroupDashboard();
@@ -4267,6 +4291,7 @@ if (groupForm) {
       groupState.error = "";
       groupState.progress = "";
       groupState.selected = { compositions: {}, doses: {}, products: {} };
+      groupState.expanded = { compositions: {}, doses: {} };
       closeGroupReport();
       renderGroupDashboard();
     }, 0);
@@ -4274,6 +4299,18 @@ if (groupForm) {
 }
 
 if (groupDashboard) {
+  groupDashboard.addEventListener("click", (event) => {
+    const expandButton = event.target.closest("[data-group-expand]");
+    if (expandButton) {
+      const group = expandButton.dataset.groupExpand;
+      const key = expandButton.dataset.key;
+      if (groupState.expanded[group] && key) {
+        groupState.expanded[group][key] = !groupState.expanded[group][key];
+        renderGroupDashboard();
+      }
+    }
+  });
+
   groupDashboard.addEventListener("change", (event) => {
     const selectAll = event.target.closest("[data-group-select-all]");
     if (selectAll) {
