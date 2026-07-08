@@ -1307,9 +1307,7 @@ button:focus-visible {
   flex-wrap: wrap;
 }
 
-.group-tree-selectors label,
-.group-tree-node,
-.group-tree-product {
+.group-tree-selectors label {
   display: inline-flex;
   align-items: flex-start;
   gap: 8px;
@@ -1404,33 +1402,52 @@ button:focus-visible {
 
 .group-tree-node,
 .group-tree-product {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
   width: 100%;
   color: inherit;
 }
 
+.group-tree-selectors input,
 .group-tree-node input,
 .group-tree-product input {
-  flex: 0 0 auto;
-  margin-top: 2px;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: var(--teal);
 }
 
-.group-tree-node > span,
-.group-tree-product > span {
+.group-tree-selectors input {
+  flex: 0 0 16px;
+  margin-top: 0;
+}
+
+.group-tree-node-text,
+.group-tree-product-text {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-.group-tree-node strong,
-.group-tree-product strong {
+.group-tree-node-main,
+.group-tree-product-name {
   color: var(--text);
+  font-weight: 900;
   line-height: 1.4;
   word-break: keep-all;
   overflow-wrap: break-word;
 }
 
-.group-tree-node em,
-.group-tree-product em {
+.group-tree-node-main .multiline-cell {
+  font-weight: 900;
+}
+
+.group-tree-node-meta,
+.group-tree-product-meta {
   color: var(--muted);
   font-size: 11px;
   font-style: normal;

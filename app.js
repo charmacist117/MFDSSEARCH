@@ -856,6 +856,18 @@ function selectedProductsWithin(products, selectedSet) {
   return products.filter((product) => selectedSet.has(product.itemSeq));
 }
 
+function renderGroupTreeNode(group, key, checked, mainHtml, metaText = "") {
+  return `
+    <label class="group-tree-node">
+      <input type="checkbox" data-group-toggle="${escapeHtml(group)}" data-key="${escapeHtml(key)}" ${checked ? "checked" : ""}>
+      <span class="group-tree-node-text">
+        <span class="group-tree-node-main">${mainHtml}</span>
+        ${metaText ? `<span class="group-tree-node-meta">${escapeHtml(metaText)}</span>` : ""}
+      </span>
+    </label>
+  `;
+}
+
 function renderGroupProductList(products) {
   if (!products.length) {
     return `<div class="group-tree-products empty">제품이 없습니다.</div>`;
@@ -867,9 +879,9 @@ function renderGroupProductList(products) {
         return `
           <label class="group-tree-product">
             <input type="checkbox" data-group-toggle="products" data-key="${escapeHtml(productKey)}" ${productKey && groupState.selected.products[productKey] !== false ? "checked" : ""}>
-            <span>
-              <strong>${escapeHtml(product.itemName || "-")}</strong>
-              <em>${escapeHtml([product.entpName, productKey && `품목기준코드 ${productKey}`].filter(Boolean).join(" · ") || "-")}</em>
+            <span class="group-tree-product-text">
+              <span class="group-tree-product-name">${escapeHtml(product.itemName || "-")}</span>
+              <span class="group-tree-product-meta">${escapeHtml([product.entpName, productKey && `품목기준코드 ${productKey}`].filter(Boolean).join(" · ") || "-")}</span>
             </span>
           </label>
         `;
@@ -896,25 +908,25 @@ function renderGroupTreeRows(summary) {
     return `
       <section class="group-tree-row">
         <div class="group-tree-cell composition-cell">
-          <label class="group-tree-node">
-            <input type="checkbox" data-group-toggle="compositions" data-key="${escapeHtml(composition.key)}" ${groupState.selected.compositions[composition.key] !== false ? "checked" : ""}>
-            <span>
-              <strong>${renderComponentLines(composition.components, "name")}</strong>
-              <em>${composition.products.length.toLocaleString("ko-KR")}개 제품 · ${compositionDoses.length.toLocaleString("ko-KR")}개 세부 용량</em>
-            </span>
-          </label>
+          ${renderGroupTreeNode(
+            "compositions",
+            composition.key,
+            groupState.selected.compositions[composition.key] !== false,
+            renderComponentLines(composition.components, "name"),
+            `${composition.products.length.toLocaleString("ko-KR")}개 제품 · ${compositionDoses.length.toLocaleString("ko-KR")}개 세부 용량`
+          )}
         </div>
         <div class="group-tree-branches">
           ${visibleDoses.map((dose) => `
             <div class="group-tree-branch">
               <div class="group-tree-cell dose-cell">
-                <label class="group-tree-node">
-                  <input type="checkbox" data-group-toggle="doses" data-key="${escapeHtml(dose.key)}" ${groupState.selected.doses[dose.key] !== false ? "checked" : ""}>
-                  <span>
-                    <strong>${renderComponentLines(dose.components, "dose")}</strong>
-                    <em>${dose.products.length.toLocaleString("ko-KR")}개 제품</em>
-                  </span>
-                </label>
+                ${renderGroupTreeNode(
+                  "doses",
+                  dose.key,
+                  groupState.selected.doses[dose.key] !== false,
+                  renderComponentLines(dose.components, "dose"),
+                  `${dose.products.length.toLocaleString("ko-KR")}개 제품`
+                )}
               </div>
               <div class="group-tree-cell product-cell">
                 ${renderGroupProductList(dose.products)}
