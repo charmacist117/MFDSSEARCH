@@ -1302,6 +1302,11 @@ button:focus-visible {
   font-weight: 800;
 }
 
+.group-tree-section .group-warning {
+  margin-top: 6px;
+  color: #b4233c;
+}
+
 .group-tree-selectors {
   display: flex;
   align-items: center;

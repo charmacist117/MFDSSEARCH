@@ -69,6 +69,9 @@ const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
 const API_VERSION = "group-dashboard-20260702-1";
+const GROUP_DETAIL_BATCH_SIZE = 8;
+const GROUP_DETAIL_BATCH_DELAY_MS = 160;
+const GROUP_DETAIL_FALLBACK_DELAY_MS = 80;
 const HOME_PREVIEW_LIMIT = 3;
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
@@ -99,6 +102,7 @@ const groupState = {
   loading: false,
   progress: "",
   error: "",
+  notice: "",
   query: {},
   selected: {
     compositions: {},
@@ -238,6 +242,10 @@ function friendlySearchError(error) {
     return "MFDS 서버 연결이 불안정합니다. 잠시 후 다시 검색해 주세요.";
   }
   return message || "검색 요청에 실패했습니다.";
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function rowWithCachedDetail(row) {
@@ -1008,6 +1016,7 @@ function renderGroupDashboard() {
             성분조합 ${summary.compositions.length.toLocaleString("ko-KR")}개 ·
             세부용량 ${summary.doses.length.toLocaleString("ko-KR")}개
           </p>
+          ${groupState.notice ? `<p class="group-warning">${escapeHtml(groupState.notice)}</p>` : ""}
         </div>
         <div class="group-tree-selectors">
           <label><input type="checkbox" data-group-select-all="compositions" ${allCompositionsChecked ? "checked" : ""}> 성분조합 전체</label>
@@ -1179,11 +1188,56 @@ function closeGroupReport() {
   if (groupReportModal) groupReportModal.hidden = true;
 }
 
+function cacheGroupDetail(row, detail) {
+  if (!row?.itemSeq) return false;
+  groupState.detailCache[row.itemSeq] = mergeKeepNonEmpty(row, detail || {});
+  return Boolean(detail?.ok === false || detail?.detailError);
+}
+
+async function hydrateGroupDetailChunk(chunk, completedCount, totalCount) {
+  let failureCount = 0;
+  try {
+    const details = await requestDetailBatch(chunk.map((row) => row.itemSeq));
+    const received = new Set();
+    details.forEach((detail) => {
+      const itemSeq = String(detail.itemSeq || "");
+      const row = chunk.find((item) => item.itemSeq === itemSeq);
+      if (!row) return;
+      received.add(itemSeq);
+      if (cacheGroupDetail(row, detail)) failureCount += 1;
+    });
+    chunk.forEach((row) => {
+      if (!received.has(row.itemSeq)) {
+        groupState.detailCache[row.itemSeq] = { ...row, detailError: "상세 응답 누락" };
+        failureCount += 1;
+      }
+    });
+    return failureCount;
+  } catch {
+    for (let offset = 0; offset < chunk.length; offset += 1) {
+      const row = chunk[offset];
+      const current = Math.min(completedCount + offset + 1, totalCount);
+      groupState.progress = `상세정보를 개별 수집하는 중입니다. (${current} / ${totalCount}건)`;
+      renderGroupDashboard();
+      try {
+        const detail = await requestDetail(row.itemSeq);
+        cacheGroupDetail(row, detail);
+      } catch (error) {
+        groupState.detailCache[row.itemSeq] = { ...row, detailError: friendlySearchError(error) };
+        failureCount += 1;
+      }
+      await wait(GROUP_DETAIL_FALLBACK_DELAY_MS);
+    }
+    return failureCount;
+  }
+}
+
 async function loadGroupDashboard() {
   if (!groupForm) return;
   groupState.loading = true;
   groupState.step = "dashboard";
   groupState.error = "";
+  groupState.notice = "";
   groupState.progress = "검색 결과 목록을 수집하는 중입니다.";
   groupState.rows = [];
   groupState.detailCache = {};
@@ -1205,7 +1259,7 @@ async function loadGroupDashboard() {
       const params = buildGroupParams(page);
       const payload = await normalizeHumanSearchPayload(await requestHumanSearch(params), params);
       allRows.push(...(payload.items || []));
-      await new Promise((resolve) => setTimeout(resolve, 80));
+      await wait(80);
     }
 
     const deduped = [];
@@ -1218,16 +1272,13 @@ async function loadGroupDashboard() {
 
     groupState.progress = `상세정보를 수집하는 중입니다. (0 / ${deduped.length}건)`;
     renderGroupDashboard();
-    for (let i = 0; i < deduped.length; i += 30) {
-      const chunk = deduped.slice(i, i + 30);
+    let detailFailures = 0;
+    for (let i = 0; i < deduped.length; i += GROUP_DETAIL_BATCH_SIZE) {
+      const chunk = deduped.slice(i, i + GROUP_DETAIL_BATCH_SIZE);
       groupState.progress = `상세정보를 수집하는 중입니다. (${Math.min(i + chunk.length, deduped.length)} / ${deduped.length}건)`;
       renderGroupDashboard();
-      const details = await requestDetailBatch(chunk.map((row) => row.itemSeq));
-      details.forEach((detail) => {
-        const row = deduped.find((item) => item.itemSeq === detail.itemSeq);
-        groupState.detailCache[detail.itemSeq] = mergeKeepNonEmpty(row, detail);
-      });
-      await new Promise((resolve) => setTimeout(resolve, 120));
+      detailFailures += await hydrateGroupDetailChunk(chunk, i, deduped.length);
+      await wait(GROUP_DETAIL_BATCH_DELAY_MS);
     }
 
     const finalRows = deduped.map((row) => groupState.detailCache[row.itemSeq] ? mergeKeepNonEmpty(row, groupState.detailCache[row.itemSeq]) : row);
@@ -1235,6 +1286,9 @@ async function loadGroupDashboard() {
     groupState.summary = buildGroupSummary(finalRows);
     groupState.loading = false;
     groupState.progress = "";
+    groupState.notice = detailFailures
+      ? `상세정보 ${detailFailures.toLocaleString("ko-KR")}건은 수집 실패 또는 일부 누락되어 목록 정보 기준으로 분석했습니다.`
+      : "";
     renderGroupDashboard();
   } catch (error) {
     groupState.loading = false;
@@ -2938,8 +2992,20 @@ async function requestDetailBatch(itemSeqs) {
   const seqs = Array.from(new Set(itemSeqs.filter(Boolean)));
   if (!seqs.length) return [];
   const response = await fetch(`/api/detail-batch?itemSeqs=${encodeURIComponent(seqs.join(","))}&_v=${encodeURIComponent(API_VERSION)}`);
-  if (!response.ok) throw new Error(`상세 배치 요청 실패 (${response.status})`);
+  if (!response.ok) {
+    let detailMessage = "";
+    try {
+      const errorPayload = await response.json();
+      detailMessage = errorPayload.message || errorPayload.error || "";
+    } catch {
+      detailMessage = "";
+    }
+    throw new Error(detailMessage || `상세 배치 요청 실패 (${response.status})`);
+  }
   const payload = await response.json();
+  if (payload.error) {
+    throw new Error(payload.message || payload.error);
+  }
   return payload.items || [];
 }
 
@@ -4289,6 +4355,7 @@ if (groupForm) {
       groupState.rows = [];
       groupState.summary = null;
       groupState.error = "";
+      groupState.notice = "";
       groupState.progress = "";
       groupState.selected = { compositions: {}, doses: {}, products: {} };
       groupState.expanded = { compositions: {}, doses: {} };
@@ -4339,6 +4406,7 @@ if (groupBackButton) {
     groupState.step = "setup";
     groupState.loading = false;
     groupState.error = "";
+    groupState.notice = "";
     closeGroupReport();
     renderGroupDashboard();
   });
