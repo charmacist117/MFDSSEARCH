@@ -68,7 +68,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "group-dashboard-20260702-1";
+const API_VERSION = "presence-scan-20260709-1";
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
 const GROUP_DETAIL_FALLBACK_DELAY_MS = 80;
@@ -508,12 +508,12 @@ function buildSearchParams() {
     params.set("timeoutMs", "10000");
     params.set("retries", "2");
     params.set("fastFail", "0");
-    params.set("presenceScanPages", "3");
-    params.set("detailCandidateLimit", "30");
-    params.set("contractBudgetMs", "8000");
-    params.set("detailTimeoutMs", "2500");
+    params.set("presenceScanPages", "12");
+    params.set("detailCandidateLimit", "120");
+    params.set("contractBudgetMs", "18000");
+    params.set("detailTimeoutMs", "5000");
     params.set("detailRetries", "1");
-    params.set("detailConcurrency", "5");
+    params.set("detailConcurrency", "4");
   } else if (params.get("contractManufacturer") || params.get("reviewType")) {
     params.set("timeoutMs", "10000");
     params.set("retries", "2");
@@ -617,12 +617,12 @@ function compactParams(values, filters, page) {
     params.set("timeoutMs", "10000");
     params.set("retries", "2");
     params.set("fastFail", "0");
-    params.set("presenceScanPages", "3");
-    params.set("detailCandidateLimit", "30");
-    params.set("contractBudgetMs", "8000");
-    params.set("detailTimeoutMs", "2500");
+    params.set("presenceScanPages", "12");
+    params.set("detailCandidateLimit", "120");
+    params.set("contractBudgetMs", "18000");
+    params.set("detailTimeoutMs", "5000");
     params.set("detailRetries", "1");
-    params.set("detailConcurrency", "5");
+    params.set("detailConcurrency", "4");
   } else if (params.get("contractManufacturer") || params.get("reviewType")) {
     params.set("timeoutMs", "10000");
     params.set("retries", "2");
