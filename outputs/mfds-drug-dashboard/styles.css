@@ -188,6 +188,11 @@ button {
   font-weight: 900;
 }
 
+.home-search-help {
+  justify-self: start;
+  margin-top: 2px;
+}
+
 .home-search-results {
   display: grid;
   gap: 12px;

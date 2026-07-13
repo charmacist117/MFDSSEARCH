@@ -128,11 +128,27 @@ function extractHumanPresenceFilters(query = {}) {
     .map((field) => ({ field, mode: valueOf(query[field]).trim() }));
 }
 
+function normalizeIngredientPresencePart(value) {
+  return cleanText(value)
+    .replace(/[（][^）]*[）]/g, "")
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/\s+/g, "")
+    .toLowerCase()
+    .trim();
+}
+
 function ingredientPartCount(value) {
-  return String(value || "")
+  const uniqueParts = new Set();
+  String(value || "")
     .split(/\s*[/,]\s*/)
     .map((item) => item.trim())
-    .filter(Boolean).length;
+    .filter(Boolean)
+    .forEach((item) => {
+      const normalized = normalizeIngredientPresencePart(item);
+      if (normalized && normalized !== "-") uniqueParts.add(normalized);
+    });
+  return uniqueParts.size;
 }
 
 function humanFieldHasContent(item, field) {
