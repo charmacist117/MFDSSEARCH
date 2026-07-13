@@ -975,6 +975,39 @@ function renderGroupTreeRows(summary) {
   }).join("");
 }
 
+function currentGroupTreeScrollState() {
+  const treeWrap = groupDashboard?.querySelector(".group-tree-wrap");
+  return {
+    treeTop: treeWrap ? treeWrap.scrollTop : 0,
+    treeLeft: treeWrap ? treeWrap.scrollLeft : 0,
+    windowTop: typeof window !== "undefined" ? window.scrollY : 0,
+    windowLeft: typeof window !== "undefined" ? window.scrollX : 0
+  };
+}
+
+function restoreGroupTreeScrollState(scrollState) {
+  if (!scrollState) return;
+  const treeWrap = groupDashboard?.querySelector(".group-tree-wrap");
+  if (treeWrap) {
+    const maxTop = Math.max(treeWrap.scrollHeight - treeWrap.clientHeight, 0);
+    const maxLeft = Math.max(treeWrap.scrollWidth - treeWrap.clientWidth, 0);
+    treeWrap.scrollTop = Math.min(scrollState.treeTop, maxTop);
+    treeWrap.scrollLeft = Math.min(scrollState.treeLeft, maxLeft);
+  }
+  if (typeof window !== "undefined") {
+    window.scrollTo(scrollState.windowLeft, scrollState.windowTop);
+  }
+}
+
+function renderGroupDashboardPreservingScroll() {
+  const scrollState = currentGroupTreeScrollState();
+  renderGroupDashboard();
+  restoreGroupTreeScrollState(scrollState);
+  if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(() => restoreGroupTreeScrollState(scrollState));
+  }
+}
+
 function renderGroupDashboard() {
   if (!groupDashboard || !groupSetupPanel) return;
   groupSetupPanel.hidden = groupState.step === "dashboard";
@@ -4566,6 +4599,18 @@ if (groupForm) {
     loadGroupDashboard();
   });
 
+  groupForm.addEventListener("click", (event) => {
+    const segmentButton = event.target.closest("[data-group-field] button");
+    if (!segmentButton) return;
+    const group = segmentButton.closest("[data-group-field]");
+    const field = group?.dataset.groupField;
+    if (!field) return;
+    group.querySelectorAll("button").forEach((button) => button.classList.remove("active"));
+    segmentButton.classList.add("active");
+    const input = groupForm.elements[field];
+    if (input) input.value = segmentButton.dataset.value || "";
+  });
+
   groupForm.addEventListener("reset", () => {
     setTimeout(() => {
       groupState.step = "setup";
@@ -4576,6 +4621,13 @@ if (groupForm) {
       groupState.progress = "";
       groupState.selected = { compositions: {}, doses: {}, products: {} };
       groupState.expanded = { compositions: {}, doses: {} };
+      groupForm.querySelectorAll("[data-group-field]").forEach((group) => {
+        const input = groupForm.elements[group.dataset.groupField];
+        if (input) input.value = "";
+        group.querySelectorAll("button").forEach((button) => {
+          button.classList.toggle("active", button.dataset.value === "");
+        });
+      });
       closeGroupReport();
       renderGroupDashboard();
     }, 0);
@@ -4590,7 +4642,7 @@ if (groupDashboard) {
       const key = expandButton.dataset.key;
       if (groupState.expanded[group] && key) {
         groupState.expanded[group][key] = !groupState.expanded[group][key];
-        renderGroupDashboard();
+        renderGroupDashboardPreservingScroll();
       }
     }
   });
@@ -4602,7 +4654,7 @@ if (groupDashboard) {
       Object.keys(groupState.selected[group] || {}).forEach((key) => {
         groupState.selected[group][key] = selectAll.checked;
       });
-      renderGroupDashboard();
+      renderGroupDashboardPreservingScroll();
       return;
     }
 
@@ -4612,7 +4664,7 @@ if (groupDashboard) {
       const key = toggle.dataset.key;
       if (groupState.selected[group] && key) {
         groupState.selected[group][key] = toggle.checked;
-        renderGroupDashboard();
+        renderGroupDashboardPreservingScroll();
       }
     }
   });

@@ -364,6 +364,48 @@
               <span>포함</span>
             </label>
           </div>
+          <div class="control-row">
+            <span>품목구분</span>
+            <input type="hidden" name="itemCategory" value="">
+            <div class="segmented" data-group-field="itemCategory">
+              <button type="button" class="active" data-value="">전체</button>
+              <button type="button" data-value="A0">의약품</button>
+              <button type="button" data-value="B0">의약외품</button>
+              <button type="button" data-value="C0">생물의약품</button>
+              <button type="button" data-value="F0">마약류</button>
+              <button type="button" data-value="J0">첨단바이오</button>
+              <button type="button" data-value="E0">한약(생약)제제</button>
+            </div>
+          </div>
+          <div class="control-row">
+            <span>취소/취하</span>
+            <input type="hidden" name="cancelStatus" value="">
+            <div class="segmented" data-group-field="cancelStatus">
+              <button type="button" class="active" data-value="">전체</button>
+              <button type="button" data-value="0">정상</button>
+              <button type="button" data-value="2">취하</button>
+              <button type="button" data-value="A">유효기간만료</button>
+            </div>
+          </div>
+          <div class="control-row">
+            <span>전문/일반</span>
+            <input type="hidden" name="etcOtc" value="">
+            <div class="segmented" data-group-field="etcOtc">
+              <button type="button" class="active" data-value="">전체</button>
+              <button type="button" data-value="02">전문</button>
+              <button type="button" data-value="01">일반</button>
+            </div>
+          </div>
+          <div class="control-row">
+            <span>완제/원료</span>
+            <input type="hidden" name="makeMaterial" value="">
+            <div class="segmented" data-group-field="makeMaterial">
+              <button type="button" class="active" data-value="">전체</button>
+              <button type="button" data-value="01">완제</button>
+              <button type="button" data-value="03">원료</button>
+              <button type="button" data-value="02">한약재</button>
+            </div>
+          </div>
           <div class="form-actions">
             <button class="primary" type="submit">제품군 대시보드 생성</button>
             <button class="secondary" type="reset">초기화</button>
