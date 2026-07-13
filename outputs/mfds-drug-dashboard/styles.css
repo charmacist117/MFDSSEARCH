@@ -1740,9 +1740,15 @@ button:focus-visible {
 }
 
 .group-report-actions .csv-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 116px;
   border-color: var(--teal-dark);
   background: var(--teal-dark);
   color: #fff;
+  white-space: nowrap;
 }
 
 .group-report-actions .icon-button {

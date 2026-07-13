@@ -1297,6 +1297,182 @@ async function loadGroupDashboard() {
   }
 }
 
+function excelColumnName(index) {
+  let value = index + 1;
+  let name = "";
+  while (value > 0) {
+    const mod = (value - 1) % 26;
+    name = String.fromCharCode(65 + mod) + name;
+    value = Math.floor((value - mod) / 26);
+  }
+  return name;
+}
+
+function escapeXml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function safeSheetName(name, index) {
+  const fallback = `Sheet${index + 1}`;
+  const text = String(name || fallback).replace(/[\[\]:*?/\\]/g, " ").trim() || fallback;
+  return text.slice(0, 31);
+}
+
+function worksheetXml(rows) {
+  const sheetRows = rows.map((row, rowIndex) => {
+    const cells = row.map((value, columnIndex) => {
+      const ref = `${excelColumnName(columnIndex)}${rowIndex + 1}`;
+      if (value === null || value === undefined || value === "") {
+        return `<c r="${ref}"/>`;
+      }
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return `<c r="${ref}"><v>${value}</v></c>`;
+      }
+      return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+    }).join("");
+    return `<row r="${rowIndex + 1}">${cells}</row>`;
+  }).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows}</sheetData></worksheet>`;
+}
+
+const xlsxCrcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = xlsxCrcTable[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pushUint16LE(target, value) {
+  target.push(value & 0xff, (value >>> 8) & 0xff);
+}
+
+function pushUint32LE(target, value) {
+  target.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
+}
+
+function xlsxBlob(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  files.forEach(({ name, content }) => {
+    const nameBytes = encoder.encode(name);
+    const dataBytes = typeof content === "string" ? encoder.encode(content) : content;
+    const checksum = crc32(dataBytes);
+    const localHeader = [];
+    pushUint32LE(localHeader, 0x04034b50);
+    pushUint16LE(localHeader, 20);
+    pushUint16LE(localHeader, 0);
+    pushUint16LE(localHeader, 0);
+    pushUint16LE(localHeader, 0);
+    pushUint16LE(localHeader, 0);
+    pushUint32LE(localHeader, checksum);
+    pushUint32LE(localHeader, dataBytes.length);
+    pushUint32LE(localHeader, dataBytes.length);
+    pushUint16LE(localHeader, nameBytes.length);
+    pushUint16LE(localHeader, 0);
+    localParts.push(new Uint8Array(localHeader), nameBytes, dataBytes);
+
+    const centralHeader = [];
+    pushUint32LE(centralHeader, 0x02014b50);
+    pushUint16LE(centralHeader, 20);
+    pushUint16LE(centralHeader, 20);
+    pushUint16LE(centralHeader, 0);
+    pushUint16LE(centralHeader, 0);
+    pushUint16LE(centralHeader, 0);
+    pushUint16LE(centralHeader, 0);
+    pushUint32LE(centralHeader, checksum);
+    pushUint32LE(centralHeader, dataBytes.length);
+    pushUint32LE(centralHeader, dataBytes.length);
+    pushUint16LE(centralHeader, nameBytes.length);
+    pushUint16LE(centralHeader, 0);
+    pushUint16LE(centralHeader, 0);
+    pushUint16LE(centralHeader, 0);
+    pushUint16LE(centralHeader, 0);
+    pushUint32LE(centralHeader, 0);
+    pushUint32LE(centralHeader, offset);
+    centralParts.push(new Uint8Array(centralHeader), nameBytes);
+
+    offset += localHeader.length + nameBytes.length + dataBytes.length;
+  });
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = [];
+  pushUint32LE(end, 0x06054b50);
+  pushUint16LE(end, 0);
+  pushUint16LE(end, 0);
+  pushUint16LE(end, files.length);
+  pushUint16LE(end, files.length);
+  pushUint32LE(end, centralSize);
+  pushUint32LE(end, offset);
+  pushUint16LE(end, 0);
+
+  return new Blob([...localParts, ...centralParts, new Uint8Array(end)], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  });
+}
+
+function createXlsxWorkbook(sheets) {
+  const safeSheets = sheets.map((sheet, index) => ({
+    name: safeSheetName(sheet.name, index),
+    rows: sheet.rows || []
+  }));
+  const overrides = safeSheets
+    .map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`)
+    .join("");
+  const workbookSheets = safeSheets
+    .map((sheet, index) => `<sheet name="${escapeXml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
+    .join("");
+  const workbookRels = safeSheets
+    .map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`)
+    .join("");
+
+  const files = [
+    {
+      name: "[Content_Types].xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${overrides}</Types>`
+    },
+    {
+      name: "_rels/.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
+    },
+    {
+      name: "xl/workbook.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${workbookSheets}</sheets></workbook>`
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${workbookRels}</Relationships>`
+    },
+    ...safeSheets.map((sheet, index) => ({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      content: worksheetXml(sheet.rows)
+    }))
+  ];
+  return xlsxBlob(files);
+}
+
+function yearValueCells(years, totals) {
+  return years.map((year) => Number(totals?.[year] || 0) || "");
+}
+
 function downloadGroupCsv() {
   const summary = groupState.summary;
   if (!summary) return;
@@ -1310,67 +1486,108 @@ function downloadGroupCsv() {
     .filter((entry) => entry.products.length);
   const selectedYears = {};
   selectedProducts.forEach((product) => addPerformanceTotals(selectedYears, product.performance));
-  const lines = [];
 
-  lines.push([toCsvValue("요약")].join(","));
-  [
+  const yearHeaders = summary.years.map((year) => `${year}년 생산/수입실적`);
+  const summaryRows = [
+    ["항목", "값"],
     ["전체 제품", summary.products.length],
     ["선택 제품", selectedProducts.length],
     ["고유 성분", summary.ingredientCount],
     ["선택 성분 조합", selectedCompositions.length],
     ["선택 세부 용량 조합", selectedDoses.length]
-  ].forEach((row) => lines.push(row.map(toCsvValue).join(",")));
-  lines.push(["선택 결과 연도별 총합", "", ...groupYearCsvCells(summary.years, selectedYears)].join(","));
+  ];
+  summaryRows.push([]);
+  summaryRows.push(["선택 결과 연도별 총합", ...yearHeaders]);
+  summaryRows.push(["생산/수입실적", ...yearValueCells(summary.years, selectedYears)]);
 
-  lines.push("");
-  lines.push([toCsvValue("성분 조합")].join(","));
-  lines.push(["성분 조합", "선택 제품 수", "허가사-제품명", "포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)].map(toCsvValue).join(","));
+  const compositionRows = [[
+    "성분 조합",
+    "조합 내 선택 제품 수",
+    "허가사",
+    "제품명",
+    "품목기준코드",
+    "세부 용량",
+    "단위용량",
+    "제품 포장단위",
+    ...yearHeaders
+  ]];
   selectedCompositions.forEach(({ item, products }) => {
-    const aggregate = aggregateGroupProducts(products);
-    lines.push([
-      toCsvValue(componentCsvText(item.components, "name")),
-      toCsvValue(products.length),
-      toCsvValue(productPermitList(products)),
-      toCsvValue(Array.from(aggregate.packages).join(" / ")),
-      ...groupYearCsvCells(summary.years, aggregate.years)
-    ].join(","));
+    products.forEach((product) => {
+      const totals = productPerformanceTotals(product);
+      compositionRows.push([
+        componentCsvText(item.components, "name"),
+        products.length,
+        product.entpName,
+        product.itemName,
+        String(product.itemSeq || ""),
+        componentCsvText(product.components, "dose"),
+        product.unitDose,
+        product.packageUnit || product.packageInfo || "",
+        ...yearValueCells(summary.years, totals)
+      ]);
+    });
   });
 
-  lines.push("");
-  lines.push([toCsvValue("세부 용량 조합")].join(","));
-  lines.push(["성분 조합", "세부 용량", "선택 제품 수", "허가사-제품명", "포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)].map(toCsvValue).join(","));
+  const doseRows = [[
+    "성분 조합",
+    "세부 용량",
+    "용량 조합 내 선택 제품 수",
+    "허가사",
+    "제품명",
+    "품목기준코드",
+    "단위용량",
+    "제품 포장단위",
+    ...yearHeaders
+  ]];
   selectedDoses.forEach(({ item, products }) => {
-    const aggregate = aggregateGroupProducts(products);
-    lines.push([
-      toCsvValue(componentCsvText(item.components, "name")),
-      toCsvValue(componentCsvText(item.components, "dose")),
-      toCsvValue(products.length),
-      toCsvValue(productPermitList(products)),
-      toCsvValue(Array.from(aggregate.packages).join(" / ")),
-      ...groupYearCsvCells(summary.years, aggregate.years)
-    ].join(","));
+    products.forEach((product) => {
+      const totals = productPerformanceTotals(product);
+      doseRows.push([
+        componentCsvText(item.components, "name"),
+        componentCsvText(item.components, "dose"),
+        products.length,
+        product.entpName,
+        product.itemName,
+        String(product.itemSeq || ""),
+        product.unitDose,
+        product.packageUnit || product.packageInfo || "",
+        ...yearValueCells(summary.years, totals)
+      ]);
+    });
   });
 
-  lines.push("");
-  lines.push([toCsvValue("제품 목록")].join(","));
-  const headers = ["제품명", "업체명", "품목기준코드", "성분 조합", "세부 용량", "단위용량", "제품 포장단위", ...summary.years.map((year) => `${year}년 생산/수입실적`)];
-  lines.push(headers.map(toCsvValue).join(","));
+  const productRows = [[
+    "허가사",
+    "제품명",
+    "품목기준코드",
+    "성분 조합",
+    "세부 용량",
+    "단위용량",
+    "제품 포장단위",
+    ...yearHeaders
+  ]];
   selectedProducts.forEach((product) => {
     const totals = {};
     addPerformanceTotals(totals, product.performance);
-    lines.push([
-      toCsvValue(product.itemName),
-      toCsvValue(product.entpName),
-      toCsvValue(product.itemSeq),
-      toCsvValue(componentCsvText(product.components, "name")),
-      toCsvValue(componentCsvText(product.components, "dose")),
-      toCsvValue(product.unitDose),
-      toCsvValue(product.packageUnit || product.packageInfo || ""),
-      ...groupYearCsvCells(summary.years, totals)
-    ].join(","));
+    productRows.push([
+      product.entpName,
+      product.itemName,
+      String(product.itemSeq || ""),
+      componentCsvText(product.components, "name"),
+      componentCsvText(product.components, "dose"),
+      product.unitDose,
+      product.packageUnit || product.packageInfo || "",
+      ...yearValueCells(summary.years, totals)
+    ]);
   });
-  const filename = getUniqueFilename(`product-group-dashboard-${new Date().toISOString().slice(0, 10)}.csv`);
-  const blob = new Blob(["\ufeff", lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+
+  const blob = createXlsxWorkbook([
+    { name: "요약", rows: summaryRows },
+    { name: "성분 조합별 제품 상세", rows: compositionRows },
+    { name: "세부 용량 조합별 제품 상세", rows: doseRows },
+    { name: "제품 목록", rows: productRows }
+  ]);
+  const filename = getUniqueFilename(`product-group-dashboard-${new Date().toISOString().slice(0, 10)}.xlsx`);
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
