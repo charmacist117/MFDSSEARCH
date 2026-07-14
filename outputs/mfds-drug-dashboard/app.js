@@ -68,11 +68,18 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "presence-distinct-20260713-1";
+const API_VERSION = "global-sort-20260714-1";
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
 const GROUP_DETAIL_FALLBACK_DELAY_MS = 80;
 const HOME_PREVIEW_LIMIT = 3;
+const MFDS_SERVER_SORT_FIELDS = {
+  itemName: "ITEM_NAME",
+  entpName: "ENTP_NAME",
+  mainIngredient: "MAIN_INGR",
+  etcOtc: "ETC_OTC_CODE_NAME",
+  permitDate: "ITEM_PERMIT_DATE"
+};
 const REVIEW_TYPE_OPTIONS = [
   "자료제출의약품",
   "자료제출의약품(유전자재조합의약품 및 세포배양의약품)",
@@ -397,6 +404,7 @@ function compareSortValues(left, right, direction) {
 function sortedResultRows(rows) {
   const key = state.sort?.key;
   if (!key) return rows;
+  if (MFDS_SERVER_SORT_FIELDS[key]) return rows;
   const direction = state.sort.direction === "desc" ? "desc" : "asc";
   return rows
     .map((row, index) => ({ row, index }))
@@ -503,6 +511,11 @@ function hasPresenceToken(params) {
 function buildSearchParams() {
   const values = withExportOnlyMode(Object.fromEntries(new FormData(form).entries()), form);
   const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page), _v: API_VERSION });
+  const serverSort = MFDS_SERVER_SORT_FIELDS[state.sort?.key];
+  if (serverSort) {
+    params.set("sort", serverSort);
+    params.set("sortOrder", state.sort.direction === "desc" ? "true" : "false");
+  }
   const usesPresenceToken = hasPresenceToken(params);
   if (usesPresenceToken) {
     params.set("timeoutMs", "10000");
@@ -4219,7 +4232,11 @@ document.querySelector("#humanResultTable")?.addEventListener("click", (event) =
     state.sort.key = key;
     state.sort.direction = "asc";
   }
-  render();
+  if (MFDS_SERVER_SORT_FIELDS[key]) {
+    loadResults({ resetPage: true });
+  } else {
+    render();
+  }
 });
 
 detailPanel.addEventListener("click", (event) => {
