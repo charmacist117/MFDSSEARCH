@@ -68,7 +68,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "performance-section-20260722-1";
+const API_VERSION = "performance-dynamic-years-20260722-1";
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
 const GROUP_DETAIL_FALLBACK_DELAY_MS = 80;
@@ -274,19 +274,32 @@ function exportOnlyTagHtml(drug) {
   return hasExportOnly ? `<span class="tag amber">수출용</span>` : "";
 }
 
+function collectPerformanceYears(target, performance) {
+  if (!performance?.rows?.length) return;
+  performance.rows.forEach((row) => {
+    const year = String(row.year || "").trim();
+    if (/^\d{4}$/.test(year)) target.add(Number(year));
+  });
+}
+
+function sortedPerformanceYears(years) {
+  return Array.from(years)
+    .map(Number)
+    .filter((year) => Number.isInteger(year) && year >= 1900 && year <= 2999)
+    .sort((a, b) => a - b);
+}
+
+function performanceYearsForProducts(products = []) {
+  const years = new Set();
+  products.forEach((product) => collectPerformanceYears(years, product.performance));
+  return sortedPerformanceYears(years);
+}
+
 function getPerformanceYears() {
   const years = new Set();
-  state.rows.forEach((row) => {
-    const drug = rowWithCachedDetail(row);
-    if (drug.performance?.rows) {
-      drug.performance.rows.forEach((r) => {
-        if (r.year && /^\d{4}$/.test(r.year)) {
-          years.add(Number(r.year));
-        }
-      });
-    }
-  });
-  return Array.from(years).sort((a, b) => a - b);
+  state.rows.forEach((row) => collectPerformanceYears(years, rowWithCachedDetail(row).performance));
+  Object.values(state.detailCache || {}).forEach((detail) => collectPerformanceYears(years, detail.performance));
+  return sortedPerformanceYears(years);
 }
 
 function formatPerformanceYearCell(performance, year) {
@@ -822,20 +835,16 @@ function buildGroupSummary(rows) {
     return product;
   });
 
-  const years = new Set();
   const ingredientNames = new Set();
   productRows.forEach((product) => {
     product.components.forEach((component) => ingredientNames.add(component.name));
-    product.performance?.rows?.forEach((row) => {
-      if (/^\d{4}$/.test(String(row.year || ""))) years.add(String(row.year));
-    });
   });
 
   const summary = {
     products: productRows,
     compositions: Array.from(compositionMap.values()).sort((a, b) => b.products.length - a.products.length || a.key.localeCompare(b.key, "ko")),
     doses: Array.from(doseMap.values()).sort((a, b) => b.products.length - a.products.length || a.key.localeCompare(b.key, "ko")),
-    years: Array.from(years).sort(),
+    years: performanceYearsForProducts(productRows),
     ingredientCount: ingredientNames.size
   };
   ensureGroupSelections(summary);
@@ -2970,14 +2979,8 @@ function downloadCompareSlotCsv(slot) {
       lines.push(rowData.map(toCsvValue).join(","));
     });
   } else {
-    const years = new Set();
     const rows = slot.rows.map((row) => slot.detailCache[row.itemSeq] ? mergeKeepNonEmpty(row, slot.detailCache[row.itemSeq]) : row);
-    rows.forEach((drug) => {
-      drug.performance?.rows?.forEach((perf) => {
-        if (/^\d{4}$/.test(String(perf.year || ""))) years.add(String(perf.year));
-      });
-    });
-    const perfYears = Array.from(years).sort();
+    const perfYears = performanceYearsForProducts(rows);
     headers = ["제품명", "업체명", "성분 조합", "주성분영문명", "단위용량", "전문/일반", "효능효과", "용법용량", "제품 포장단위", "허가일", ...perfYears.map((year) => `${year}년 생산/수입실적`)];
     lines.push(headers.map(toCsvValue).join(","));
     rows.forEach((drug) => {
@@ -4027,17 +4030,7 @@ async function downloadCsvAllResults(category = "human") {
         return mergeKeepNonEmpty(item, detail);
       });
 
-      const years = new Set();
-      finalItems.forEach((drug) => {
-        if (drug.performance?.rows) {
-          drug.performance.rows.forEach((r) => {
-            if (r.year && /^\d{4}$/.test(r.year)) {
-              years.add(Number(r.year));
-            }
-          });
-        }
-      });
-      const perfYears = Array.from(years).sort((a, b) => a - b);
+      const perfYears = performanceYearsForProducts(finalItems);
 
       headers = [
         ["rowNumber", "순번"],
