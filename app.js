@@ -68,7 +68,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "global-sort-20260714-1";
+const API_VERSION = "performance-section-20260722-1";
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
 const GROUP_DETAIL_FALLBACK_DELAY_MS = 80;
@@ -3242,7 +3242,8 @@ async function fetchAndCacheDetail(itemSeq) {
 }
 
 async function requestDetail(itemSeq) {
-  const response = await fetch(`/api/detail?itemSeq=${encodeURIComponent(itemSeq)}`);
+  const params = new URLSearchParams({ itemSeq, _v: API_VERSION });
+  const response = await fetch(`/api/detail?${params}`);
   if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
   const payload = await response.json();
   if (payload.error) {
