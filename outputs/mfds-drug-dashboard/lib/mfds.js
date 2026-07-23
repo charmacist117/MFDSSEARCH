@@ -470,7 +470,7 @@ function hasHumanClientFilters(filters = {}) {
     filters.ingredient4 ||
     filters.ingredient5 ||
     filters.reviewType ||
-    needsExportOnlyDetail(filters.exportMode)
+    filters.exportMode
   );
 }
 
@@ -522,7 +522,7 @@ async function enrichItemsWithDetails(items, detailOptions = {}) {
   return { items: detailed, timedOut };
 }
 
-async function collectSearchPages(query, firstPage, maxPages = 12) {
+async function collectSearchPages(query, firstPage, maxPages = 12, concurrency = 3) {
   const firstItems = firstPage.parsed.items || [];
   const pageSize = firstItems.length || 15;
   const nativeTotalPages = firstPage.parsed.total ? Math.ceil(firstPage.parsed.total / pageSize) : 1;
@@ -530,7 +530,7 @@ async function collectSearchPages(query, firstPage, maxPages = 12) {
   for (let page = 2; page <= Math.min(nativeTotalPages, maxPages); page += 1) {
     pagesToFetch.push(page);
   }
-  const extraPages = await mapConcurrent(pagesToFetch, 3, async (page) => {
+  const extraPages = await mapConcurrent(pagesToFetch, concurrency, async (page) => {
     try {
       return await fetchSearchPage(query, page);
     } catch {
@@ -550,9 +550,13 @@ async function searchMfdsWithClientFilters(query, page, cacheKey) {
   };
   const firstPage = await fetchSearchPage(nativeQuery, 1);
   const nativePageSize = firstPage.parsed.items.length || 15;
+  const nativeTotalPages = firstPage.parsed.total ? Math.ceil(firstPage.parsed.total / nativePageSize) : 1;
   const requestedScanPages = Number(valueOf(query.presenceScanPages) || valueOf(query.clientFilterPages) || 12);
-  const maxScanPages = Math.min(Math.max(requestedScanPages, page), 25);
-  const candidates = await collectSearchPages(nativeQuery, firstPage, maxScanPages);
+  const completeExportScan = Boolean(filters.exportMode);
+  const maxScanPages = completeExportScan
+    ? nativeTotalPages
+    : Math.min(Math.max(requestedScanPages, page), 25);
+  const candidates = await collectSearchPages(nativeQuery, firstPage, maxScanPages, completeExportScan ? 8 : 3);
   const searchStartedAt = Date.now();
   const budgetMs = Math.max(Number(valueOf(query.contractBudgetMs) || 8000), 4000);
   const needsDetail = humanClientFiltersNeedDetail(filters);
@@ -1129,7 +1133,7 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
   let items = enriched.items;
   let total = items.length;
   let sourceUrl = firstPage.url;
-  const scannedTotalPages = firstPage.parsed.total ? Math.ceil(firstPage.parsed.total / nativePageSize) : 1;
+  const scannedTotalPages = nativeTotalPages;
   let notice = `${CONTRACT_SEARCH_NOTICE} 원본 목록 ${Math.min(maxScanPages, scannedTotalPages)}페이지 ${allCandidates.length}건 중 ${candidateItems.length}건의 상세정보 기준으로 확인합니다.`;
   if (allCandidates.length > candidateItems.length) {
     notice = `${notice} 응답 속도를 위해 먼저 ${candidateItems.length}건만 확인했습니다.`;

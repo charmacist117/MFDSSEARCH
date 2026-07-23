@@ -68,7 +68,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "performance-dynamic-years-20260722-1";
+const API_VERSION = "export-repaginate-20260723-1";
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
 const GROUP_DETAIL_FALLBACK_DELAY_MS = 80;
@@ -500,7 +500,8 @@ async function requestHumanSearch(params) {
 async function normalizeHumanSearchPayload(payload, params) {
   const mode = String(params.get("exportOnlyMode") || "").toLowerCase();
   let normalized = applyClientExportOnlyMode(payload, mode);
-  if ((mode === "exclude" || mode === "only") && !(normalized.items || []).length) {
+  // The API now filters and repaginates the full result set. Do not retry with page-local filtering.
+  if (false && (mode === "exclude" || mode === "only") && !(normalized.items || []).length) {
     const retryParams = new URLSearchParams(params);
     retryParams.set("exportOnlyMode", "include");
     retryParams.set("_v", `${API_VERSION}-client-export-retry`);
