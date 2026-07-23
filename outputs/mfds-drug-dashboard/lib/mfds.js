@@ -1291,19 +1291,24 @@ async function getMfdsDetail(itemSeq, options = {}) {
   if (cached) return cached;
 
   const detailUrl = `${BASE_URL}/pbp/CCBBB01/getItemDetail?itemSeq=${encodeURIComponent(itemSeq)}`;
-  const retries = Number(options.retries || 3);
-  const timeoutMs = Number(options.timeoutMs || 12000);
+  const retries = Number(options.retries ?? 3);
+  const timeoutMs = Number(options.timeoutMs ?? 12000);
   const { url, text } = await fetchMfdsText(detailUrl, retries, timeoutMs, {
     fallbackOnFetchError: options.fallbackOnFetchError !== false
   });
   return detailMemoryCache.set(cacheKey, parseDetailHtml(text, url));
 }
 
-async function getMfdsDetailsBatch(itemSeqs = [], concurrency = 5) {
+async function getMfdsDetailsBatch(itemSeqs = [], concurrency = 5, detailOptions = {}) {
   const uniqueSeqs = Array.from(new Set(itemSeqs.map((seq) => String(seq || "").trim()).filter(Boolean))).slice(0, 30);
+  const safeDetailOptions = {
+    retries: Math.max(Number(detailOptions.retries ?? 1), 1),
+    timeoutMs: Number(detailOptions.timeoutMs ?? 10000),
+    fallbackOnFetchError: detailOptions.fallbackOnFetchError === true
+  };
   const rows = await mapConcurrent(uniqueSeqs, concurrency, async (itemSeq) => {
     try {
-      const detail = await getMfdsDetail(itemSeq);
+      const detail = await getMfdsDetail(itemSeq, safeDetailOptions);
       return {
         itemSeq,
         ok: true,
@@ -1329,7 +1334,7 @@ async function getMfdsDetailsBatch(itemSeqs = [], concurrency = 5) {
         itemSeq,
         ok: false,
         detailPartial: true,
-        detailError: error.message || "상세 요청 실패"
+        detailError: error?.message || "상세 요청 실패"
       };
     }
   });

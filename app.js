@@ -68,7 +68,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "export-repaginate-20260723-1";
+const API_VERSION = "csv-detail-batches-20260723-1";
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
 const GROUP_DETAIL_FALLBACK_DELAY_MS = 80;
@@ -3259,7 +3259,19 @@ async function requestDetail(itemSeq) {
 async function requestDetailBatch(itemSeqs) {
   const seqs = Array.from(new Set(itemSeqs.filter(Boolean)));
   if (!seqs.length) return [];
-  const response = await fetch(`/api/detail-batch?itemSeqs=${encodeURIComponent(seqs.join(","))}&_v=${encodeURIComponent(API_VERSION)}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  let response;
+  try {
+    response = await fetch(`/api/detail-batch?itemSeqs=${encodeURIComponent(seqs.join(","))}&_v=${encodeURIComponent(API_VERSION)}`, {
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("상세정보 배치 요청 시간 초과");
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
   if (!response.ok) {
     let detailMessage = "";
     try {
@@ -3888,7 +3900,7 @@ async function downloadCsvAllResults(category = "human") {
 
   try {
     let allItems = [];
-    const pageSize = 10;
+    const pageSize = category === "human" ? Math.max(Number(state.pageSize || 15), 1) : 10;
     const totalPages = Math.ceil(limitTotal / pageSize);
 
     // Step 1: Collect list pages progressively
@@ -3943,7 +3955,7 @@ async function downloadCsvAllResults(category = "human") {
       });
 
       if (missingSeqs.length > 0) {
-        const batchSize = 30;
+        const batchSize = 10;
         if (statusEl) statusEl.textContent = `상세정보 조회 중... (0 / ${missingSeqs.length}개 완료)`;
 
         for (let i = 0; i < missingSeqs.length; i += batchSize) {
@@ -3953,22 +3965,31 @@ async function downloadCsvAllResults(category = "human") {
             statusEl.textContent = `상세정보 조회 중... (${currentProgress} / ${missingSeqs.length}개 완료)`;
           }
 
-          try {
-            const fetchedDetails = await requestDetailBatch(chunk);
-            fetchedDetails.forEach((detail) => {
+          const cacheDetails = (details) => {
+            (details || []).forEach((detail) => {
+              if (!detail || detail.ok === false || detail.detailError) return;
               const row = allItems.find((r) => r.itemSeq === detail.itemSeq);
               cache[detail.itemSeq] = mergeKeepNonEmpty(row, detail);
             });
+          };
+
+          try {
+            const fetchedDetails = await requestDetailBatch(chunk);
+            cacheDetails(fetchedDetails);
+            const retrySeqs = fetchedDetails
+              .filter((detail) => detail?.ok === false || detail?.detailError)
+              .map((detail) => detail.itemSeq);
+            if (retrySeqs.length) {
+              await new Promise((resolve) => setTimeout(resolve, 250));
+              cacheDetails(await requestDetailBatch(retrySeqs));
+            }
           } catch (batchErr) {
-            console.error("Batch fetch failed, retrying items individually", batchErr);
-            for (const seq of chunk) {
-              try {
-                const detail = await requestDetail(seq);
-                const row = allItems.find((r) => r.itemSeq === seq);
-                cache[seq] = mergeKeepNonEmpty(row, detail);
-              } catch (singleErr) {
-                console.error(`Failed to fetch detail for ${seq}`, singleErr);
-              }
+            console.error("Batch fetch failed, retrying batch once", batchErr);
+            try {
+              await new Promise((resolve) => setTimeout(resolve, 250));
+              cacheDetails(await requestDetailBatch(chunk));
+            } catch (retryError) {
+              console.error("Batch retry failed; continuing CSV generation", retryError);
             }
           }
 
