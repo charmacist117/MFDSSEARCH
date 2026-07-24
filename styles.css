@@ -471,6 +471,10 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.performance-all-option {
+  margin-left: auto;
+}
+
 .segmented {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
