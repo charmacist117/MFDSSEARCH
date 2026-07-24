@@ -68,7 +68,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "csv-detail-batches-20260723-1";
+const API_VERSION = "performance-filter-20260723-1";
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
 const GROUP_DETAIL_FALLBACK_DELAY_MS = 80;
@@ -454,6 +454,19 @@ function withExportOnlyMode(values, root) {
   };
 }
 
+function withPerformanceFilter(values, root) {
+  const boxes = Array.from(root?.querySelectorAll?.("[data-performance-filter]") || []);
+  if (!boxes.length) return values;
+  const allBox = boxes.find((box) => box.value === "all");
+  const selected = boxes
+    .filter((box) => box.value !== "all" && box.checked)
+    .map((box) => box.value);
+  return {
+    ...values,
+    performanceFilter: allBox?.checked || !selected.length ? "" : selected.join(",")
+  };
+}
+
 function hasExportOnlyName(value) {
   return /[\(（]\s*수출용\s*[\)）]/i.test(String(value || ""));
 }
@@ -523,7 +536,10 @@ function hasPresenceToken(params) {
 }
 
 function buildSearchParams() {
-  const values = withExportOnlyMode(Object.fromEntries(new FormData(form).entries()), form);
+  const values = withPerformanceFilter(
+    withExportOnlyMode(Object.fromEntries(new FormData(form).entries()), form),
+    form
+  );
   const params = new URLSearchParams({ ...values, ...state.filters, page: String(state.page), _v: API_VERSION });
   const serverSort = MFDS_SERVER_SORT_FIELDS[state.sort?.key];
   if (serverSort) {
@@ -2590,6 +2606,28 @@ function handleExportOnlyModeChange(target) {
   }
 }
 
+function handlePerformanceFilterChange(target) {
+  if (!target?.matches?.("[data-performance-filter]")) return;
+  const group = target.closest(".performance-filter-row");
+  if (!group) return;
+  const boxes = Array.from(group.querySelectorAll("[data-performance-filter]"));
+  const allBox = boxes.find((box) => box.value === "all");
+  const categoryBoxes = boxes.filter((box) => box.value !== "all");
+
+  if (target === allBox && target.checked) {
+    categoryBoxes.forEach((box) => {
+      box.checked = false;
+    });
+    return;
+  }
+  if (target !== allBox && target.checked && allBox) {
+    allBox.checked = false;
+  }
+  if (!categoryBoxes.some((box) => box.checked) && allBox) {
+    allBox.checked = true;
+  }
+}
+
 function preferredHomeMatchLabel(group, fallback = "제품명") {
   if (/발열|고열|열감|통증|동통|기침|해수|가래|담|설사|구토|염증|감염|해열|진통|진해|거담/.test(homeSearchState.keyword.replace(/\s+/g, ""))) {
     return "효능효과";
@@ -4185,6 +4223,7 @@ form.addEventListener("reset", () => {
 
 form.addEventListener("change", (event) => {
   handleExportOnlyModeChange(event.target);
+  handlePerformanceFilterChange(event.target);
 });
 
 form.querySelectorAll(".segmented").forEach((group) => {
