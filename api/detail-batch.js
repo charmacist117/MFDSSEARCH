@@ -10,7 +10,7 @@ module.exports = async function handler(req, res) {
       timeoutMs: 10000,
       fallbackOnFetchError: false
     });
-    res.setHeader("Cache-Control", "s-maxage=86400, stale-while-revalidate=604800");
+    res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=21600");
     res.status(200).json(payload);
   } catch (error) {
     res.status(502).json({

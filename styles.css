@@ -1792,6 +1792,22 @@ button:focus-visible {
   gap: 16px;
 }
 
+.group-report-warning {
+  border: 1px solid #f1c26b;
+  background: #fff8e8;
+  color: #8a4b08;
+  padding: 11px 13px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.performance-total-lines {
+  min-width: 118px;
+  color: var(--text);
+  font-weight: 800;
+}
+
 .external-workspace {
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);

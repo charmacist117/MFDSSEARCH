@@ -68,7 +68,8 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "performance-filter-bounded-20260724-1";
+const API_VERSION = "group-performance-consistency-20260729-1";
+const DETAIL_DATA_VERSION = Math.floor((Date.now() + 9 * 60 * 60 * 1000) / (24 * 60 * 60 * 1000));
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
 const GROUP_DETAIL_FALLBACK_DELAY_MS = 80;
@@ -237,7 +238,8 @@ function populateReviewTypeSelects() {
 function mergeKeepNonEmpty(base, overlay) {
   const result = { ...base };
   for (const [key, value] of Object.entries(overlay || {})) {
-    if (value === "" && result[key] && result[key] !== "") continue;
+    const overlayIsEmpty = value === "" || value === null || value === undefined;
+    if (overlayIsEmpty && result[key] !== "" && result[key] !== null && result[key] !== undefined) continue;
     result[key] = value;
   }
   return result;
@@ -785,6 +787,53 @@ function addPerformanceTotals(target, performance) {
   });
 }
 
+function hasPerformanceRows(product) {
+  return Boolean(product?.performance?.rows?.length);
+}
+
+function groupPerformanceBucketKey(performance) {
+  const type = String(performance?.type || "실적").trim() || "실적";
+  const unit = String(performance?.unit || "").replace(/^단위\s*:\s*/i, "").trim();
+  return `${type}::${unit}`;
+}
+
+function addGroupPerformanceTotals(target, performance) {
+  if (!performance?.rows?.length) return;
+  const bucketKey = groupPerformanceBucketKey(performance);
+  performance.rows.forEach((row) => {
+    const year = String(row.year || "").trim();
+    if (!/^\d{4}$/.test(year)) return;
+    const amount = parseSortableNumber(row.amount);
+    if (!Number.isFinite(amount)) return;
+    if (!target[year]) target[year] = {};
+    target[year][bucketKey] = (target[year][bucketKey] || 0) + amount;
+  });
+}
+
+function groupPerformanceValueText(bucketKey, value) {
+  const [type = "실적", unit = ""] = String(bucketKey || "").split("::");
+  const formatted = Number(value || 0).toLocaleString("ko-KR");
+  if (unit.includes("$") || unit.toLowerCase().includes("dollar") || unit.includes("달러")) {
+    return `${type} $${formatted}`;
+  }
+  if (unit.includes("천원")) return `${type} ₩${formatted}천원`;
+  if (unit.includes("원") || unit.includes("₩") || unit.includes("￦")) return `${type} ₩${formatted}원`;
+  return `${type} ${formatted}${unit ? ` ${unit}` : ""}`;
+}
+
+function groupPerformanceCellHtml(yearTotal) {
+  const entries = Object.entries(yearTotal || {});
+  if (!entries.length) return `<span class="muted">-</span>`;
+  return `<span class="multiline-cell performance-total-lines">${entries
+    .map(([bucketKey, value]) => `<span>${escapeHtml(groupPerformanceValueText(bucketKey, value))}</span>`)
+    .join("")}</span>`;
+}
+
+function groupPerformanceCellText(yearTotal) {
+  const entries = Object.entries(yearTotal || {});
+  return entries.map(([bucketKey, value]) => groupPerformanceValueText(bucketKey, value)).join("\n");
+}
+
 function formatGroupTotal(value) {
   return Number(value || 0).toLocaleString("ko-KR");
 }
@@ -830,7 +879,7 @@ function buildGroupSummary(rows) {
     const composition = compositionMap.get(compositionKey);
     composition.products.push(product);
     if (product.packageUnit) composition.packages.add(product.packageUnit);
-    addPerformanceTotals(composition.years, product.performance);
+    addGroupPerformanceTotals(composition.years, product.performance);
 
     if (!doseMap.has(doseKey)) {
       doseMap.set(doseKey, {
@@ -847,7 +896,7 @@ function buildGroupSummary(rows) {
     const dose = doseMap.get(doseKey);
     dose.products.push(product);
     if (product.packageUnit) dose.packages.add(product.packageUnit);
-    addPerformanceTotals(dose.years, product.performance);
+    addGroupPerformanceTotals(dose.years, product.performance);
 
     return product;
   });
@@ -879,16 +928,20 @@ function selectedGroupProducts() {
 }
 
 function groupYearCells(years, totals) {
-  return years.map((year) => `<td>${formatGroupTotal(totals?.[year] || 0)}</td>`).join("");
+  return years.map((year) => `<td>${groupPerformanceCellHtml(totals?.[year])}</td>`).join("");
 }
 
 function groupYearCsvCells(years, totals) {
   return years.map((year) => toCsvValue(totals?.[year] ? formatGroupTotal(totals[year]) : ""));
 }
 
+function groupPerformanceYearValueCells(years, totals) {
+  return years.map((year) => groupPerformanceCellText(totals?.[year]));
+}
+
 function productPerformanceTotals(product) {
   const totals = {};
-  addPerformanceTotals(totals, product.performance);
+  addGroupPerformanceTotals(totals, product.performance);
   return totals;
 }
 
@@ -898,7 +951,7 @@ function aggregateGroupProducts(products) {
   products.forEach((product) => {
     const packageText = packageUnitText(product);
     if (packageText) packages.add(packageText);
-    addPerformanceTotals(years, product.performance);
+    addGroupPerformanceTotals(years, product.performance);
   });
   return { packages, years };
 }
@@ -1118,15 +1171,17 @@ function renderGroupReportDashboard() {
   const selectedProducts = selectedGroupProducts();
   const selectedSet = new Set(selectedProducts.map((product) => product.itemSeq));
   const selectedYears = {};
-  selectedProducts.forEach((product) => addPerformanceTotals(selectedYears, product.performance));
+  selectedProducts.forEach((product) => addGroupPerformanceTotals(selectedYears, product.performance));
+  const reportYears = sortedPerformanceYears(Object.keys(selectedYears));
+  const missingPerformanceProducts = selectedProducts.filter((product) => !hasPerformanceRows(product));
   const selectedCompositions = summary.compositions
     .map((item) => ({ item, products: selectedProductsWithin(item.products, selectedSet) }))
     .filter((entry) => entry.products.length);
   const selectedDoses = summary.doses
     .map((item) => ({ item, products: selectedProductsWithin(item.products, selectedSet) }))
     .filter((entry) => entry.products.length);
-  const yearHeaders = summary.years.map((year) => `<th>${year}년</th>`).join("") || "<th>실적</th>";
-  const emptyYearCells = summary.years.length ? "" : "<td>-</td>";
+  const yearHeaders = reportYears.map((year) => `<th>${year}년</th>`).join("") || "<th>실적</th>";
+  const emptyYearCells = reportYears.length ? "" : "<td>-</td>";
 
   const compositionRows = selectedCompositions.map(({ item, products }) => {
     const aggregate = aggregateGroupProducts(products);
@@ -1136,7 +1191,7 @@ function renderGroupReportDashboard() {
         <td>${products.length.toLocaleString("ko-KR")}</td>
         <td>${renderMultilineText(productPermitList(products), "permit-product-lines")}</td>
         <td>${escapeHtml(Array.from(aggregate.packages).join(" / ") || "-")}</td>
-        ${summary.years.length ? groupYearCells(summary.years, aggregate.years) : emptyYearCells}
+        ${reportYears.length ? groupYearCells(reportYears, aggregate.years) : emptyYearCells}
       </tr>
     `;
   }).join("");
@@ -1150,7 +1205,7 @@ function renderGroupReportDashboard() {
         <td>${products.length.toLocaleString("ko-KR")}</td>
         <td>${renderMultilineText(productPermitList(products), "permit-product-lines")}</td>
         <td>${escapeHtml(Array.from(aggregate.packages).join(" / ") || "-")}</td>
-        ${summary.years.length ? groupYearCells(summary.years, aggregate.years) : emptyYearCells}
+        ${reportYears.length ? groupYearCells(reportYears, aggregate.years) : emptyYearCells}
       </tr>
     `;
   }).join("");
@@ -1165,13 +1220,20 @@ function renderGroupReportDashboard() {
         <td>${renderComponentLines(product.components, "name")}</td>
         <td>${renderComponentLines(product.components, "dose")}</td>
         <td>${escapeHtml(product.packageUnit || product.packageInfo || "-")}</td>
-        ${summary.years.length ? groupYearCells(summary.years, totals) : emptyYearCells}
+        ${reportYears.length ? groupYearCells(reportYears, totals) : emptyYearCells}
       </tr>
     `;
   }).join("");
 
   groupReportContent.innerHTML = `
     <div class="group-report-dashboard">
+      ${missingPerformanceProducts.length ? `
+        <div class="group-report-warning">
+          선택 제품 ${selectedProducts.length.toLocaleString("ko-KR")}개 중
+          ${missingPerformanceProducts.length.toLocaleString("ko-KR")}개는 생산·수입실적을 확인하지 못했습니다.
+          누락 품목은 0이 아닌 -로 표시하며 합계에서 제외합니다.
+        </div>
+      ` : ""}
       <div class="group-kpis">
         <div><strong>${summary.products.length.toLocaleString("ko-KR")}</strong><span>전체 제품</span></div>
         <div><strong>${selectedProducts.length.toLocaleString("ko-KR")}</strong><span>선택 제품</span></div>
@@ -1185,7 +1247,7 @@ function renderGroupReportDashboard() {
         <div class="group-table-wrap">
           <table class="result-table group-table">
             <thead><tr>${yearHeaders}</tr></thead>
-            <tbody><tr>${summary.years.length ? groupYearCells(summary.years, selectedYears) : emptyYearCells}</tr></tbody>
+            <tbody><tr>${reportYears.length ? groupYearCells(reportYears, selectedYears) : emptyYearCells}</tr></tbody>
           </table>
         </div>
       </section>
@@ -1203,7 +1265,7 @@ function renderGroupReportDashboard() {
                 ${yearHeaders}
               </tr>
             </thead>
-            <tbody>${compositionRows || `<tr><td colspan="${4 + Math.max(summary.years.length, 1)}" class="table-message">선택된 성분 조합이 없습니다.</td></tr>`}</tbody>
+            <tbody>${compositionRows || `<tr><td colspan="${4 + Math.max(reportYears.length, 1)}" class="table-message">선택된 성분 조합이 없습니다.</td></tr>`}</tbody>
           </table>
         </div>
       </section>
@@ -1222,7 +1284,7 @@ function renderGroupReportDashboard() {
                 ${yearHeaders}
               </tr>
             </thead>
-            <tbody>${doseRows || `<tr><td colspan="${5 + Math.max(summary.years.length, 1)}" class="table-message">선택된 세부 용량 조합이 없습니다.</td></tr>`}</tbody>
+            <tbody>${doseRows || `<tr><td colspan="${5 + Math.max(reportYears.length, 1)}" class="table-message">선택된 세부 용량 조합이 없습니다.</td></tr>`}</tbody>
           </table>
         </div>
       </section>
@@ -1242,7 +1304,7 @@ function renderGroupReportDashboard() {
                 ${yearHeaders}
               </tr>
             </thead>
-            <tbody>${productRows || `<tr><td colspan="${6 + Math.max(summary.years.length, 1)}" class="table-message">선택된 제품이 없습니다.</td></tr>`}</tbody>
+            <tbody>${productRows || `<tr><td colspan="${6 + Math.max(reportYears.length, 1)}" class="table-message">선택된 제품이 없습니다.</td></tr>`}</tbody>
           </table>
         </div>
       </section>
@@ -1266,6 +1328,33 @@ function cacheGroupDetail(row, detail) {
   return Boolean(detail?.ok === false || detail?.detailError);
 }
 
+async function retryMissingGroupPerformances(rows, completedCount, totalCount) {
+  const missingRows = rows.filter((row) => !hasPerformanceRows(groupState.detailCache[row.itemSeq]));
+  let failureCount = 0;
+  for (let index = 0; index < missingRows.length; index += 2) {
+    const chunk = missingRows.slice(index, index + 2);
+    const current = Math.min(completedCount + index + chunk.length, totalCount);
+    groupState.progress = `실적 누락 품목을 개별 재확인하는 중입니다. (${current} / ${totalCount}건)`;
+    renderGroupDashboard();
+    const results = await Promise.all(chunk.map(async (row) => {
+      try {
+        const detail = await requestDetail(row.itemSeq);
+        cacheGroupDetail(row, detail);
+        return false;
+      } catch (error) {
+        groupState.detailCache[row.itemSeq] = {
+          ...groupState.detailCache[row.itemSeq],
+          detailError: friendlySearchError(error)
+        };
+        return true;
+      }
+    }));
+    failureCount += results.filter(Boolean).length;
+    if (index + chunk.length < missingRows.length) await wait(GROUP_DETAIL_FALLBACK_DELAY_MS);
+  }
+  return failureCount;
+}
+
 async function hydrateGroupDetailChunk(chunk, completedCount, totalCount) {
   let failureCount = 0;
   try {
@@ -1284,6 +1373,7 @@ async function hydrateGroupDetailChunk(chunk, completedCount, totalCount) {
         failureCount += 1;
       }
     });
+    failureCount += await retryMissingGroupPerformances(chunk, completedCount, totalCount);
     return failureCount;
   } catch {
     for (let offset = 0; offset < chunk.length; offset += 1) {
@@ -1354,13 +1444,19 @@ async function loadGroupDashboard() {
     }
 
     const finalRows = deduped.map((row) => groupState.detailCache[row.itemSeq] ? mergeKeepNonEmpty(row, groupState.detailCache[row.itemSeq]) : row);
+    const missingPerformanceCount = finalRows.filter((row) => !hasPerformanceRows(row)).length;
     groupState.rows = finalRows;
     groupState.summary = buildGroupSummary(finalRows);
     groupState.loading = false;
     groupState.progress = "";
-    groupState.notice = detailFailures
-      ? `상세정보 ${detailFailures.toLocaleString("ko-KR")}건은 수집 실패 또는 일부 누락되어 목록 정보 기준으로 분석했습니다.`
-      : "";
+    const notices = [];
+    if (detailFailures) {
+      notices.push(`상세정보 ${detailFailures.toLocaleString("ko-KR")}건은 수집 실패 또는 일부 누락되어 목록 정보 기준으로 분석했습니다.`);
+    }
+    if (missingPerformanceCount) {
+      notices.push(`생산·수입실적 ${missingPerformanceCount.toLocaleString("ko-KR")}건은 개별 재확인 후에도 찾지 못해 0이 아닌 -로 표시하고 합계에서 제외했습니다.`);
+    }
+    groupState.notice = notices.join(" ");
     renderGroupDashboard();
   } catch (error) {
     groupState.loading = false;
@@ -1541,10 +1637,6 @@ function createXlsxWorkbook(sheets) {
   return xlsxBlob(files);
 }
 
-function yearValueCells(years, totals) {
-  return years.map((year) => Number(totals?.[year] || 0) || "");
-}
-
 function downloadGroupCsv() {
   const summary = groupState.summary;
   if (!summary) return;
@@ -1557,9 +1649,10 @@ function downloadGroupCsv() {
     .map((item) => ({ item, products: selectedProductsWithin(item.products, selectedSet) }))
     .filter((entry) => entry.products.length);
   const selectedYears = {};
-  selectedProducts.forEach((product) => addPerformanceTotals(selectedYears, product.performance));
+  selectedProducts.forEach((product) => addGroupPerformanceTotals(selectedYears, product.performance));
+  const reportYears = sortedPerformanceYears(Object.keys(selectedYears));
 
-  const yearHeaders = summary.years.map((year) => `${year}년 생산/수입실적`);
+  const yearHeaders = reportYears.map((year) => `${year}년 생산/수입실적`);
   const summaryRows = [
     ["항목", "값"],
     ["전체 제품", summary.products.length],
@@ -1570,7 +1663,7 @@ function downloadGroupCsv() {
   ];
   summaryRows.push([]);
   summaryRows.push(["선택 결과 연도별 총합", ...yearHeaders]);
-  summaryRows.push(["생산/수입실적", ...yearValueCells(summary.years, selectedYears)]);
+  summaryRows.push(["생산/수입실적", ...groupPerformanceYearValueCells(reportYears, selectedYears)]);
 
   const compositionRows = [[
     "성분 조합",
@@ -1595,7 +1688,7 @@ function downloadGroupCsv() {
         componentCsvText(product.components, "dose"),
         product.unitDose,
         product.packageUnit || product.packageInfo || "",
-        ...yearValueCells(summary.years, totals)
+        ...groupPerformanceYearValueCells(reportYears, totals)
       ]);
     });
   });
@@ -1623,7 +1716,7 @@ function downloadGroupCsv() {
         String(product.itemSeq || ""),
         product.unitDose,
         product.packageUnit || product.packageInfo || "",
-        ...yearValueCells(summary.years, totals)
+        ...groupPerformanceYearValueCells(reportYears, totals)
       ]);
     });
   });
@@ -1640,7 +1733,7 @@ function downloadGroupCsv() {
   ]];
   selectedProducts.forEach((product) => {
     const totals = {};
-    addPerformanceTotals(totals, product.performance);
+    addGroupPerformanceTotals(totals, product.performance);
     productRows.push([
       product.entpName,
       product.itemName,
@@ -1649,7 +1742,7 @@ function downloadGroupCsv() {
       componentCsvText(product.components, "dose"),
       product.unitDose,
       product.packageUnit || product.packageInfo || "",
-      ...yearValueCells(summary.years, totals)
+      ...groupPerformanceYearValueCells(reportYears, totals)
     ]);
   });
 
@@ -3284,7 +3377,7 @@ async function fetchAndCacheDetail(itemSeq) {
 }
 
 async function requestDetail(itemSeq) {
-  const params = new URLSearchParams({ itemSeq, _v: API_VERSION });
+  const params = new URLSearchParams({ itemSeq, _v: `${API_VERSION}-${DETAIL_DATA_VERSION}` });
   const response = await fetch(`/api/detail?${params}`);
   if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
   const payload = await response.json();
@@ -3301,7 +3394,7 @@ async function requestDetailBatch(itemSeqs) {
   const timeoutId = setTimeout(() => controller.abort(), 25000);
   let response;
   try {
-    response = await fetch(`/api/detail-batch?itemSeqs=${encodeURIComponent(seqs.join(","))}&_v=${encodeURIComponent(API_VERSION)}`, {
+    response = await fetch(`/api/detail-batch?itemSeqs=${encodeURIComponent(seqs.join(","))}&_v=${encodeURIComponent(`${API_VERSION}-${DETAIL_DATA_VERSION}`)}`, {
       signal: controller.signal
     });
   } catch (error) {
