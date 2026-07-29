@@ -825,7 +825,13 @@ function groupPerformanceCellHtml(yearTotal) {
   const entries = Object.entries(yearTotal || {});
   if (!entries.length) return `<span class="muted">-</span>`;
   return `<span class="multiline-cell performance-total-lines">${entries
-    .map(([bucketKey, value]) => `<span>${escapeHtml(groupPerformanceValueText(bucketKey, value))}</span>`)
+    .map(([bucketKey, value]) => {
+      const type = String(bucketKey || "").split("::")[0];
+      const toneClass = type.includes("생산")
+        ? "performance-production"
+        : (type.includes("수입") ? "performance-import" : "performance-other");
+      return `<span class="performance-total-line ${toneClass}">${escapeHtml(groupPerformanceValueText(bucketKey, value))}</span>`;
+    })
     .join("")}</span>`;
 }
 

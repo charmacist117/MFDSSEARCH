@@ -1806,6 +1806,33 @@ button:focus-visible {
   min-width: 118px;
   color: var(--text);
   font-weight: 800;
+  gap: 4px;
+}
+
+.performance-total-line {
+  display: block;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border-left: 3px solid transparent;
+  white-space: nowrap;
+}
+
+.performance-production {
+  border-left-color: #059669;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.performance-import {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.performance-other {
+  border-left-color: #64748b;
+  background: #f8fafc;
+  color: #475569;
 }
 
 .external-workspace {
