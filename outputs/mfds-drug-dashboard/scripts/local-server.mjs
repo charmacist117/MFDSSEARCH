@@ -13,7 +13,6 @@ const require = createRequire(import.meta.url);
 const { searchMfds, getMfdsDetail, getMfdsDetailsBatch, generateMfdsCsv } = require("../lib/mfds.js");
 const { searchVetMedicines, searchAquaticMedicines, getPublicMedicineDetail, generateVetCsv, generateAquaticCsv } = require("../lib/public-medicines.js");
 const { globalSearch } = require("../lib/global-search.js");
-const { changesForCategory, changesCsv, CATEGORY_LABELS } = require("../lib/change-log.js");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -114,24 +113,6 @@ const server = http.createServer(async (req, res) => {
         const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
         sendJson(res, 502, { error: "mfds_detail_batch_failed", message: detailMsg });
       }
-      return;
-    }
-
-    if (url.pathname === "/api/changes") {
-      sendJson(res, 200, await changesForCategory(url.searchParams.get("category") || "human", {
-        live: url.searchParams.get("live") === "1",
-        days: url.searchParams.get("days")
-      }));
-      return;
-    }
-
-    if (url.pathname === "/api/changes-csv") {
-      const category = CATEGORY_LABELS[url.searchParams.get("category")] ? url.searchParams.get("category") : "human";
-      res.writeHead(200, {
-        "content-type": "text/csv; charset=utf-8",
-        "content-disposition": `attachment; filename=medicine-changes-${category}.csv`
-      });
-      res.end(await changesCsv(category));
       return;
     }
 

@@ -30,13 +30,6 @@ const resultBody = document.querySelector("#resultBody");
 const resultCount = document.querySelector("#resultCount");
 const detailPanel = document.querySelector("#detailPanel");
 const csvButton = document.querySelector("#csvButton");
-const changesButtons = document.querySelectorAll("[data-changes-category]");
-const changesModal = document.querySelector("#changesModal");
-const changesTitle = document.querySelector("#changesTitle");
-const changesMeta = document.querySelector("#changesMeta");
-const changesContent = document.querySelector("#changesContent");
-const changesCsvLink = document.querySelector("#changesCsvLink");
-const changesCloseButton = document.querySelector("#changesCloseButton");
 const prevPage = document.querySelector("#prevPage");
 const nextPage = document.querySelector("#nextPage");
 const goPage = document.querySelector("#goPage");
@@ -68,7 +61,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "group-performance-consistency-20260729-1";
+const API_VERSION = "feature-cleanup-20260803-1";
 const DETAIL_DATA_VERSION = Math.floor((Date.now() + 9 * 60 * 60 * 1000) / (24 * 60 * 60 * 1000));
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
@@ -2563,7 +2556,6 @@ function compareSelectedDrug(slot) {
 }
 
 function showHome() {
-  closeChanges();
   activeCategory = "home";
   activeWorkspaceTab = "search";
   categoryTabs.forEach((button) => {
@@ -2858,76 +2850,6 @@ function openHomeResult(category, index) {
     return;
   }
   openHomeExternalResult(category, result);
-}
-
-function renderChangeItems(title, items) {
-  if (!items?.length) {
-    return `
-      <section class="changes-section">
-        <h3>${escapeHtml(title)}</h3>
-        <p class="empty-note">누적된 내역이 없습니다.</p>
-      </section>
-    `;
-  }
-  return `
-    <section class="changes-section">
-      <h3>${escapeHtml(title)} <span>${items.length.toLocaleString("ko-KR")}건</span></h3>
-      <div class="changes-list">
-        ${items
-          .map(
-            (item) => `
-              <article class="change-item">
-                <strong>${escapeHtml(item.name || "-")}</strong>
-                <span>${escapeHtml(item.company || "-")}</span>
-                <small>${escapeHtml(item.date || "-")} · ${escapeHtml(item.id || "-")} ${item.status ? `· ${escapeHtml(item.status)}` : ""}</small>
-                ${item.note ? `<p>${escapeHtml(item.note)}</p>` : ""}
-              </article>
-            `
-          )
-          .join("")}
-      </div>
-    </section>
-  `;
-}
-
-async function openChanges(category) {
-  if (!changesModal || !changesContent) return;
-  changesModal.hidden = false;
-  changesTitle.textContent = "의약품 변동사항";
-  changesMeta.textContent = "일자별 신규 등록 및 취하·만료 누적 내역";
-  changesContent.innerHTML = `<p class="changes-loading">변동사항을 불러오는 중입니다.</p>`;
-  if (changesCsvLink) {
-    changesCsvLink.href = `/api/changes-csv?category=${encodeURIComponent(category)}`;
-  }
-
-  try {
-    const response = await fetch(`/api/changes?category=${encodeURIComponent(category)}&_v=${encodeURIComponent(API_VERSION)}`);
-    if (!response.ok) throw new Error(`변동사항 요청 실패 (${response.status})`);
-    const payload = await response.json();
-    changesTitle.textContent = `${payload.label || "의약품"} 변동사항`;
-    const metaParts = [];
-    if (payload.snapshot?.date) {
-      metaParts.push(`자정 스냅샷: ${payload.snapshot.date} (${Number(payload.snapshot.count || 0).toLocaleString("ko-KR")}건)`);
-    }
-    if (payload.range) {
-      metaParts.push(`최근 조회: ${payload.range.start} ~ ${payload.range.end}`);
-    }
-    if (payload.updatedAt) {
-      metaParts.push(`마지막 갱신: ${payload.updatedAt}`);
-    }
-    changesMeta.textContent = metaParts.length ? metaParts.join(" · ") : "아직 기준 스냅샷이 없습니다. 다음 자정 갱신 이후 전일 대비 변동사항이 누적됩니다.";
-    changesContent.innerHTML = `
-      ${payload.liveError ? `<p class="changes-loading error">${escapeHtml(payload.liveError)}</p>` : ""}
-      ${renderChangeItems("신규 등록된 의약품", payload.added || [])}
-      ${renderChangeItems("취하·만료된 의약품", payload.removed || [])}
-    `;
-  } catch (error) {
-    changesContent.innerHTML = `<p class="changes-loading error">${escapeHtml(error.message || "변동사항을 불러오지 못했습니다.")}</p>`;
-  }
-}
-
-function closeChanges() {
-  if (changesModal) changesModal.hidden = true;
 }
 
 async function runHomeSearch() {
@@ -4457,7 +4379,6 @@ function maybeAutoLoadHumanResults({ force = false } = {}) {
 }
 
 function setCategoryTab(categoryName, { autoLoad = true } = {}) {
-  closeChanges();
   activeCategory = categoryName === "vet" || categoryName === "aquatic" ? categoryName : "human";
   if (homeWorkspace) homeWorkspace.hidden = true;
   homeButton?.classList.remove("active");
@@ -4537,18 +4458,6 @@ homeSearchInput?.addEventListener("blur", () => {
 });
 
 homeButton?.addEventListener("click", showHome);
-
-changesButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    openChanges(button.dataset.changesCategory || "human");
-  });
-});
-
-changesCloseButton?.addEventListener("click", closeChanges);
-
-changesModal?.addEventListener("click", (event) => {
-  if (event.target === changesModal) closeChanges();
-});
 
 categoryTabs.forEach((button) => {
   button.addEventListener("click", () => {

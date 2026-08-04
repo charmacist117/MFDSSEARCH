@@ -10,8 +10,6 @@ MFDS 의약품등 검색의 전체 목록을 페이지 단위로 불러오고, �
 - `lib/mfds.js`: MFDS 목록/상세 공통 파서
 - `scripts/local-server.mjs`: 로컬 미리보기 서버
 - `scripts/scrape-mfds.mjs`: 전체 상세 데이터를 별도로 저장하고 싶을 때 쓰는 배치 수집 스크립트
-- `scripts/update-change-log.mjs`: 인체용/동물용 목록 스냅샷을 수집해 직전 저장 목록과 비교하고 변동사항을 누적
-- `.github/workflows/update-change-log.yml`: 매일 00:05(KST)에 변동사항 스냅샷을 갱신하고 `data/change-log.json`을 커밋
 - `db/schema.sql`: 95,000건 이상을 DB에 저장해 운영할 때 쓸 Postgres 스키마
 
 ## 로컬 확인
