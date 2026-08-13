@@ -2,9 +2,10 @@ const { getMfdsDetail } = require("../lib/mfds");
 
 module.exports = async function handler(req, res) {
   const itemSeq = String(req.query?.itemSeq || "");
+  const refresh = String(req.query?.refresh || "") === "1";
   try {
-    const payload = await getMfdsDetail(itemSeq);
-    res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=21600");
+    const payload = await getMfdsDetail(itemSeq, { refresh, retries: refresh ? 3 : 2, timeoutMs: 15000 });
+    res.setHeader("Cache-Control", refresh ? "no-store" : "s-maxage=900, stale-while-revalidate=3600");
     res.status(200).json(payload);
   } catch (error) {
     console.error("Detail API Failure:", error);

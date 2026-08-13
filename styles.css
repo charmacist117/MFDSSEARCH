@@ -1659,6 +1659,13 @@ button:focus-visible {
   line-height: 1.55;
 }
 
+.group-report-note {
+  border: 1px solid #b9d6df;
+  background: #f1fafc;
+  color: #335761;
+  padding: 10px 12px;
+}
+
 .performance-total-lines {
   min-width: 118px;
   color: var(--text);

@@ -94,7 +94,11 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/api/detail") {
       try {
-        sendJson(res, 200, await getMfdsDetail(url.searchParams.get("itemSeq")));
+        sendJson(res, 200, await getMfdsDetail(url.searchParams.get("itemSeq"), {
+          refresh: url.searchParams.get("refresh") === "1",
+          retries: 3,
+          timeoutMs: 15000
+        }));
       } catch (error) {
         console.error("Detail API Failure:", error);
         const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
@@ -107,7 +111,11 @@ const server = http.createServer(async (req, res) => {
       try {
         const rawSeqs = url.searchParams.get("itemSeqs") || url.searchParams.get("itemSeq") || "";
         const itemSeqs = rawSeqs.split(",").map((seq) => seq.trim()).filter(Boolean);
-        sendJson(res, 200, await getMfdsDetailsBatch(itemSeqs, 5));
+        sendJson(res, 200, await getMfdsDetailsBatch(itemSeqs, 5, {
+          retries: 2,
+          timeoutMs: 12000,
+          fallbackOnFetchError: false
+        }));
       } catch (error) {
         console.error("Detail Batch API Failure:", error);
         const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;

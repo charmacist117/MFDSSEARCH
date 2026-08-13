@@ -1,6 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import mfds from "../lib/mfds.js";
+
+const { parseDetailHtml } = mfds;
 
 const BASE_URL = "https://nedrug.mfds.go.kr";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -456,7 +459,7 @@ async function main() {
   const records = await mapConcurrent(itemSeqs, concurrency, async (itemSeq, index) => {
     const detailUrl = `${BASE_URL}/pbp/CCBBB01/getItemDetail?itemSeq=${encodeURIComponent(itemSeq)}`;
     const { url, text } = await fetchText(detailUrl);
-    const record = parseDetail(text, url);
+    const record = parseDetailHtml(text, url);
     console.log(`${index + 1}/${itemSeqs.length} ${record.itemSeq} ${record.itemName}`);
     await sleep(Number(args.delay || 250));
     return record;

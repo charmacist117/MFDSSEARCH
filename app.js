@@ -61,7 +61,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "feature-cleanup-20260803-1";
+const API_VERSION = "performance-completeness-20260804-1";
 const DETAIL_DATA_VERSION = Math.floor((Date.now() + 9 * 60 * 60 * 1000) / (24 * 60 * 60 * 1000));
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
@@ -263,6 +263,33 @@ function hasCsvDetailFields(value) {
   return hasOwnField(value, "packageInfo") && hasOwnField(value, "efficacy") && hasOwnField(value, "dosage");
 }
 
+function performanceDetailComplete(value) {
+  return Boolean(value?.performance?.rows?.length || value?.performanceChecked === true);
+}
+
+function humanDetailComplete(value) {
+  return Boolean(value && !value.detailError && hasCsvDetailFields(value) && performanceDetailComplete(value));
+}
+
+function performanceStatusText(value) {
+  if (value?.performance?.rows?.length) return "확인";
+  if (value?.performanceChecked === true) return "공개 실적 없음";
+  if (value?.performanceParseWarning) return "실적 표 해석 실패";
+  if (value?.detailError) return "상세 조회 실패";
+  return "미확인";
+}
+
+function performanceStatusCellHtml(value, loading = false) {
+  if (value?.performance?.rows?.length) {
+    const type = value.performance.type === "수입실적" ? "수입" : value.performance.type === "생산실적" ? "생산" : "확인";
+    const className = value.performance.type === "수입실적" ? "tag-imp" : "tag-prod";
+    return `<span class="perf-badge ${className}">${type}</span>`;
+  }
+  if (value?.performanceChecked === true) return `<span class="muted">공개 실적 없음</span>`;
+  if (loading) return `<span class="muted">조회 중</span>`;
+  return `<span class="tag amber">재확인 필요</span>`;
+}
+
 function exportOnlyTagHtml(drug) {
   const tags = Array.isArray(drug?.tags) ? drug.tags : [];
   const hasExportOnly = Boolean(drug?.exportOnly || tags.includes("수출용") || hasExportOnlyName(drug?.itemName));
@@ -383,6 +410,7 @@ function sortValueForRow(row, key) {
   if (key.startsWith("perf_")) {
     return { type: "number", value: performanceValueForYear(drug.performance, key.split("_")[1]) };
   }
+  if (key === "performanceStatus") return { type: "text", value: performanceStatusText(drug) };
   if (key === "insurancePrice") return { type: "number", value: parseInsurancePriceNumber(drug.insurancePrice) };
   if (key === "permitDate") return { type: "date", value: String(drug.permitDate || "") };
   const value = key === "rowNumber"
@@ -1172,7 +1200,8 @@ function renderGroupReportDashboard() {
   const selectedYears = {};
   selectedProducts.forEach((product) => addGroupPerformanceTotals(selectedYears, product.performance));
   const reportYears = sortedPerformanceYears(Object.keys(selectedYears));
-  const missingPerformanceProducts = selectedProducts.filter((product) => !hasPerformanceRows(product));
+  const unresolvedPerformanceProducts = selectedProducts.filter((product) => !performanceDetailComplete(product));
+  const noPublishedPerformanceProducts = selectedProducts.filter((product) => !hasPerformanceRows(product) && product.performanceChecked === true);
   const selectedCompositions = summary.compositions
     .map((item) => ({ item, products: selectedProductsWithin(item.products, selectedSet) }))
     .filter((entry) => entry.products.length);
@@ -1226,11 +1255,16 @@ function renderGroupReportDashboard() {
 
   groupReportContent.innerHTML = `
     <div class="group-report-dashboard">
-      ${missingPerformanceProducts.length ? `
+      ${unresolvedPerformanceProducts.length ? `
         <div class="group-report-warning">
           선택 제품 ${selectedProducts.length.toLocaleString("ko-KR")}개 중
-          ${missingPerformanceProducts.length.toLocaleString("ko-KR")}개는 생산·수입실적을 확인하지 못했습니다.
+          ${unresolvedPerformanceProducts.length.toLocaleString("ko-KR")}개는 생산·수입실적 상세조회를 완료하지 못했습니다.
           누락 품목은 0이 아닌 -로 표시하며 합계에서 제외합니다.
+        </div>
+      ` : ""}
+      ${noPublishedPerformanceProducts.length ? `
+        <div class="group-report-note">
+          ${noPublishedPerformanceProducts.length.toLocaleString("ko-KR")}개는 MFDS 상세 페이지에 공개된 생산·수입실적이 없습니다.
         </div>
       ` : ""}
       <div class="group-kpis">
@@ -1328,7 +1362,7 @@ function cacheGroupDetail(row, detail) {
 }
 
 async function retryMissingGroupPerformances(rows, completedCount, totalCount) {
-  const missingRows = rows.filter((row) => !hasPerformanceRows(groupState.detailCache[row.itemSeq]));
+  const missingRows = rows.filter((row) => !performanceDetailComplete(groupState.detailCache[row.itemSeq]));
   let failureCount = 0;
   for (let index = 0; index < missingRows.length; index += 2) {
     const chunk = missingRows.slice(index, index + 2);
@@ -1337,7 +1371,7 @@ async function retryMissingGroupPerformances(rows, completedCount, totalCount) {
     renderGroupDashboard();
     const results = await Promise.all(chunk.map(async (row) => {
       try {
-        const detail = await requestDetail(row.itemSeq);
+        const detail = await requestDetail(row.itemSeq, { refresh: true });
         cacheGroupDetail(row, detail);
         return false;
       } catch (error) {
@@ -1443,7 +1477,8 @@ async function loadGroupDashboard() {
     }
 
     const finalRows = deduped.map((row) => groupState.detailCache[row.itemSeq] ? mergeKeepNonEmpty(row, groupState.detailCache[row.itemSeq]) : row);
-    const missingPerformanceCount = finalRows.filter((row) => !hasPerformanceRows(row)).length;
+    const unresolvedPerformanceCount = finalRows.filter((row) => !performanceDetailComplete(row)).length;
+    const noPublishedPerformanceCount = finalRows.filter((row) => !hasPerformanceRows(row) && row.performanceChecked === true).length;
     groupState.rows = finalRows;
     groupState.summary = buildGroupSummary(finalRows);
     groupState.loading = false;
@@ -1452,8 +1487,11 @@ async function loadGroupDashboard() {
     if (detailFailures) {
       notices.push(`상세정보 ${detailFailures.toLocaleString("ko-KR")}건은 수집 실패 또는 일부 누락되어 목록 정보 기준으로 분석했습니다.`);
     }
-    if (missingPerformanceCount) {
-      notices.push(`생산·수입실적 ${missingPerformanceCount.toLocaleString("ko-KR")}건은 개별 재확인 후에도 찾지 못해 0이 아닌 -로 표시하고 합계에서 제외했습니다.`);
+    if (unresolvedPerformanceCount) {
+      notices.push(`생산·수입실적 ${unresolvedPerformanceCount.toLocaleString("ko-KR")}건은 개별 재확인 후에도 상세조회를 완료하지 못해 0이 아닌 -로 표시하고 합계에서 제외했습니다.`);
+    }
+    if (noPublishedPerformanceCount) {
+      notices.push(`${noPublishedPerformanceCount.toLocaleString("ko-KR")}건은 MFDS 상세 페이지에 공개된 생산·수입실적이 없습니다.`);
     }
     groupState.notice = notices.join(" ");
     renderGroupDashboard();
@@ -3293,7 +3331,7 @@ async function preloadAllDetails() {
 
 async function fetchAndCacheDetail(itemSeq) {
   const cached = state.detailCache[itemSeq];
-  if (cached && !cached.detailPartial && hasCsvDetailFields(cached)) return;
+  if (cached && !cached.detailPartial && humanDetailComplete(cached)) return;
   try {
     const payload = await requestDetail(itemSeq);
     const row = state.rows.find((r) => r.itemSeq === itemSeq);
@@ -3304,8 +3342,12 @@ async function fetchAndCacheDetail(itemSeq) {
   }
 }
 
-async function requestDetail(itemSeq) {
+async function requestDetail(itemSeq, options = {}) {
   const params = new URLSearchParams({ itemSeq, _v: `${API_VERSION}-${DETAIL_DATA_VERSION}` });
+  if (options.refresh === true) {
+    params.set("refresh", "1");
+    params.set("_retry", String(Date.now()));
+  }
   const response = await fetch(`/api/detail?${params}`);
   if (!response.ok) throw new Error(`상세 요청 실패 (${response.status})`);
   const payload = await response.json();
@@ -3348,40 +3390,116 @@ async function requestDetailBatch(itemSeqs) {
   return payload.items || [];
 }
 
+function cacheHumanDetailPayload(rowsBySeq, cache, payload) {
+  const itemSeq = String(payload?.itemSeq || "");
+  if (!itemSeq) return false;
+  const row = rowsBySeq.get(itemSeq) || {};
+  const current = cache[itemSeq] || row;
+  if (payload.ok === false || payload.detailError) {
+    cache[itemSeq] = {
+      ...current,
+      detailError: payload.detailError || "상세 조회 실패"
+    };
+    return false;
+  }
+  const merged = mergeKeepNonEmpty(current, payload);
+  delete merged.detailError;
+  cache[itemSeq] = merged;
+  return humanDetailComplete(merged);
+}
+
+async function hydrateHumanDetailsReliably(rows, cache, options = {}) {
+  const rowsBySeq = new Map();
+  rows.forEach((row) => {
+    const itemSeq = String(row?.itemSeq || "");
+    if (itemSeq && !rowsBySeq.has(itemSeq)) rowsBySeq.set(itemSeq, row);
+  });
+  const targets = Array.from(rowsBySeq.keys()).filter((itemSeq) => !humanDetailComplete(cache[itemSeq]));
+  const batchSize = Math.max(Number(options.batchSize || 8), 1);
+  const batchAttempts = Math.max(Number(options.batchAttempts || 1), 1);
+  const singleAttempts = Math.max(Number(options.singleAttempts || 1), 1);
+  const singleConcurrency = Math.max(Number(options.singleConcurrency || 2), 1);
+  let completed = 0;
+
+  const notify = () => options.onProgress?.(completed, targets.length);
+  notify();
+
+  for (let offset = 0; offset < targets.length; offset += batchSize) {
+    const chunk = targets.slice(offset, offset + batchSize);
+    let unresolved = chunk.filter((itemSeq) => !humanDetailComplete(cache[itemSeq]));
+
+    for (let attempt = 0; attempt < batchAttempts && unresolved.length; attempt += 1) {
+      try {
+        const details = await requestDetailBatch(unresolved);
+        const received = new Set();
+        details.forEach((detail) => {
+          const itemSeq = String(detail?.itemSeq || "");
+          if (!itemSeq) return;
+          received.add(itemSeq);
+          cacheHumanDetailPayload(rowsBySeq, cache, detail);
+        });
+        unresolved.forEach((itemSeq) => {
+          if (!received.has(itemSeq) && !cache[itemSeq]?.detailError) {
+            cache[itemSeq] = { ...(cache[itemSeq] || rowsBySeq.get(itemSeq)), detailError: "상세 응답 누락" };
+          }
+        });
+      } catch (error) {
+        unresolved.forEach((itemSeq) => {
+          cache[itemSeq] = { ...(cache[itemSeq] || rowsBySeq.get(itemSeq)), detailError: friendlySearchError(error) };
+        });
+      }
+      unresolved = chunk.filter((itemSeq) => !humanDetailComplete(cache[itemSeq]));
+      if (unresolved.length && attempt + 1 < batchAttempts) await wait(250);
+    }
+
+    let singleIndex = 0;
+    async function singleWorker() {
+      while (singleIndex < unresolved.length) {
+        const itemSeq = unresolved[singleIndex];
+        singleIndex += 1;
+        for (let attempt = 0; attempt < singleAttempts; attempt += 1) {
+          try {
+            const detail = await requestDetail(itemSeq, { refresh: true });
+            cacheHumanDetailPayload(rowsBySeq, cache, detail);
+            if (humanDetailComplete(cache[itemSeq])) break;
+          } catch (error) {
+            cache[itemSeq] = { ...(cache[itemSeq] || rowsBySeq.get(itemSeq)), detailError: friendlySearchError(error) };
+          }
+          if (attempt + 1 < singleAttempts) await wait(300);
+        }
+        completed += 1;
+        notify();
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(singleConcurrency, unresolved.length) }, singleWorker));
+    completed += chunk.length - unresolved.length;
+    notify();
+    if (offset + batchSize < targets.length) await wait(120);
+  }
+
+  const unresolved = targets.filter((itemSeq) => !humanDetailComplete(cache[itemSeq]));
+  return { requested: targets.length, unresolved };
+}
+
 async function hydrateCurrentPageDetails(generation = preloadGeneration) {
   const seqs = state.rows
     .map((row) => row.itemSeq)
-    .filter((seq) => seq && (!state.detailCache[seq]?.unitDose || !hasCsvDetailFields(state.detailCache[seq])));
+    .filter((seq) => seq && !humanDetailComplete(state.detailCache[seq]));
   if (!seqs.length) return;
 
   state.unitDoseLoading = true;
   render();
 
   try {
-    const items = await requestDetailBatch(seqs);
-    if (generation !== preloadGeneration) return;
-    items.forEach((payload) => {
-      const row = state.rows.find((item) => item.itemSeq === payload.itemSeq);
-      if (!row) return;
-      state.detailCache[payload.itemSeq] = mergeKeepNonEmpty(row, payload);
+    await hydrateHumanDetailsReliably(state.rows, state.detailCache, {
+      batchSize: 8,
+      batchAttempts: 2,
+      singleAttempts: 1,
+      singleConcurrency: 2
     });
-    state.unitDoseLoading = false;
-    render();
-  } catch {
-    const firstSeq = seqs[0];
-    if (!firstSeq || generation !== preloadGeneration) {
-      state.unitDoseLoading = false;
-      render();
-      return;
-    }
-    try {
-      const payload = await requestDetail(firstSeq);
-      if (generation !== preloadGeneration) return;
-      const row = state.rows.find((item) => item.itemSeq === firstSeq);
-      state.detailCache[firstSeq] = mergeKeepNonEmpty(row, payload);
-      state.unitDoseLoading = false;
-      render();
-    } catch {
+    if (generation !== preloadGeneration) return;
+  } finally {
+    if (generation === preloadGeneration) {
       state.unitDoseLoading = false;
       render();
     }
@@ -3391,30 +3509,16 @@ async function hydrateCurrentPageDetails(generation = preloadGeneration) {
 async function hydrateRowsWithBatch(rows, cache, generation, isActive, renderFn) {
   const seqs = rows
     .map((row) => row.itemSeq)
-    .filter((seq) => seq && !cache[seq]?.unitDose);
+    .filter((seq) => seq && !humanDetailComplete(cache[seq]));
   if (!seqs.length) return;
 
-  try {
-    const items = await requestDetailBatch(seqs);
-    if (!isActive(generation)) return;
-    items.forEach((payload) => {
-      const row = rows.find((item) => item.itemSeq === payload.itemSeq);
-      if (!row) return;
-      cache[payload.itemSeq] = mergeKeepNonEmpty(row, payload);
-    });
-    renderFn();
-  } catch {
-    if (!isActive(generation)) return;
-    const firstSeq = seqs[0];
-    if (!firstSeq) return;
-    try {
-      const payload = await requestDetail(firstSeq);
-      if (!isActive(generation)) return;
-      const row = rows.find((item) => item.itemSeq === firstSeq);
-      cache[firstSeq] = mergeKeepNonEmpty(row, payload);
-      renderFn();
-    } catch {}
-  }
+  await hydrateHumanDetailsReliably(rows, cache, {
+    batchSize: 8,
+    batchAttempts: 2,
+    singleAttempts: 1,
+    singleConcurrency: 2
+  });
+  if (isActive(generation)) renderFn();
 }
 
 async function hydrateCompareSlotDetails(slotId, generation) {
@@ -3473,7 +3577,7 @@ function renderResults() {
   statusText.textContent = state.listLoading ? "목록을 불러오는 중" : state.error || state.notice || "MFDS 실시간 목록";
 
   const perfYears = getPerformanceYears();
-  const totalCols = 10 + perfYears.length;
+  const totalCols = 11 + perfYears.length;
 
   // Dynamic header rendering
   const theadRow = document.querySelector("#humanResultTable thead tr");
@@ -3488,7 +3592,8 @@ function renderResults() {
       { key: "permitDate", label: "허가일", width: 90 },
       { key: "atcCode", label: "ATC", width: 90 },
       { key: "contractManufacturer", label: "위탁제조업체", width: 130 },
-      { key: "reviewType", label: "허가심사유형", width: 180 }
+      { key: "reviewType", label: "허가심사유형", width: 180 },
+      { key: "performanceStatus", label: "실적확인", width: 105 }
     ];
     let thHtml = "";
     baseColumns.forEach((column) => {
@@ -3560,6 +3665,7 @@ function renderResults() {
           <td>${escapeHtml(drug.atcCode || "-")}</td>
           <td>${escapeHtml(drug.contractManufacturer || "-")}</td>
           <td>${escapeHtml(drug.reviewType || "-")}</td>
+          <td>${performanceStatusCellHtml(drug, state.unitDoseLoading && !performanceDetailComplete(drug))}</td>
           ${perfCellsHtml}
         </tr>
       `;
@@ -3743,7 +3849,9 @@ function renderDetail() {
               { key: "year", label: "년도" },
               { key: "amount", label: drug.performance.type }
             ])
-          : ""
+          : drug.performanceChecked === true
+            ? `<section><h3 class="section-title">생산·수입실적</h3><p class="empty-note">MFDS 상세 페이지에 공개된 생산·수입실적이 없습니다.</p></section>`
+            : `<section><h3 class="section-title">생산·수입실적</h3><div class="table-message error detail-error"><span>${escapeHtml(drug.performanceParseWarning || drug.detailError || "실적 상세조회가 완료되지 않았습니다.")}</span><button type="button" data-retry-detail="${escapeHtml(drug.itemSeq || state.selectedSeq)}">다시 시도</button></div></section>`
       }
       ${drug.sourceUrl ? `<p class="muted">원문: ${escapeHtml(drug.sourceUrl)}</p>` : ""}
     </div>
@@ -3830,10 +3938,28 @@ function chooseCsvDownloadLimit(total, recommendedLimit = 1000) {
   });
 }
 
-function downloadCsvClientSide(category = "human") {
+async function downloadCsvClientSide(category = "human") {
   let headers = [];
   const lines = [];
   let filename = "";
+  let unresolvedDetailCount = 0;
+
+  if (category === "human") {
+    const statusEl = document.querySelector("#statusText");
+    const originalStatus = statusEl?.textContent || "";
+    const detailResult = await hydrateHumanDetailsReliably(state.rows, state.detailCache, {
+      batchSize: 8,
+      batchAttempts: 2,
+      singleAttempts: 2,
+      singleConcurrency: 2,
+      onProgress(completed, total) {
+        if (statusEl) statusEl.textContent = `현재 페이지 실적 상세조회 중... (${completed} / ${total}개 완료)`;
+      }
+    });
+    unresolvedDetailCount = detailResult.unresolved.length;
+    if (statusEl) statusEl.textContent = originalStatus;
+    render();
+  }
 
   if (category === "vet") {
     headers = ["순번", "제품명", "제품영문명", "업체명", "품목코드", "허가번호", "품목구분", "허가일", "비고"];
@@ -3898,7 +4024,8 @@ function downloadCsvClientSide(category = "human") {
       ["standardCode", "표준코드"],
       ["atcCode", "ATC코드"],
       ["performanceType", "실적구분"],
-      ["performanceUnit", "실적단위"]
+      ["performanceUnit", "실적단위"],
+      ["performanceStatus", "실적확인상태"]
     ];
     perfYears.forEach((year) => {
       headers.push([`perf_${year}`, `${year}년 생산/수입실적`]);
@@ -3916,6 +4043,7 @@ function downloadCsvClientSide(category = "human") {
         if (key === "packageUnit") return toCsvValue(drug.packageUnit || drug.packageInfo || "");
         if (key === "performanceType") return toCsvValue(drug.performance?.type || "");
         if (key === "performanceUnit") return toCsvValue(drug.performance?.unit || "");
+        if (key === "performanceStatus") return toCsvValue(performanceStatusText(drug));
         return toCsvValue(drug[key]);
       });
       lines.push(rowData.join(","));
@@ -3934,6 +4062,9 @@ function downloadCsvClientSide(category = "human") {
   setTimeout(() => {
     URL.revokeObjectURL(url);
   }, 250);
+  if (unresolvedDetailCount) {
+    alert(`${unresolvedDetailCount.toLocaleString("ko-KR")}개 품목은 반복 조회 후에도 상세정보를 확인하지 못했습니다. CSV의 실적확인상태 열에서 해당 품목을 확인해 주세요.`);
+  }
 }
 
 async function downloadCsvAllResults(category = "human") {
@@ -3956,6 +4087,7 @@ async function downloadCsvAllResults(category = "human") {
   const downloadScope = limitTotal < total ? `first-${limitTotal}` : "all";
   const statusEl = document.querySelector("#statusText");
   const originalStatus = statusEl?.textContent || "";
+  let unresolvedDetailCount = 0;
 
   try {
     let allItems = [];
@@ -4000,67 +4132,18 @@ async function downloadCsvAllResults(category = "human") {
 
     allItems = allItems.slice(0, limitTotal);
 
-    // Step 2: For human drugs, gather missing detail pages in batches
+    // Step 2: For human drugs, verify every detail and performance response.
     if (category === "human") {
-      const missingSeqs = [];
-      const cache = state.detailCache;
-
-      allItems.forEach((item) => {
-        const cached = cache[item.itemSeq];
-        const isCached = cached && cached.contractManufacturer !== undefined && hasCsvDetailFields(cached) && !cached.detailError;
-        if (!isCached) {
-          missingSeqs.push(item.itemSeq);
+      const detailResult = await hydrateHumanDetailsReliably(allItems, state.detailCache, {
+        batchSize: 8,
+        batchAttempts: 2,
+        singleAttempts: 2,
+        singleConcurrency: 2,
+        onProgress(completed, detailTotal) {
+          if (statusEl) statusEl.textContent = `상세정보 및 실적 조회 중... (${completed} / ${detailTotal}개 완료)`;
         }
       });
-
-      if (missingSeqs.length > 0) {
-        const batchSize = 10;
-        if (statusEl) statusEl.textContent = `상세정보 조회 중... (0 / ${missingSeqs.length}개 완료)`;
-
-        for (let i = 0; i < missingSeqs.length; i += batchSize) {
-          const chunk = missingSeqs.slice(i, i + batchSize);
-          const currentProgress = i;
-          if (statusEl) {
-            statusEl.textContent = `상세정보 조회 중... (${currentProgress} / ${missingSeqs.length}개 완료)`;
-          }
-
-          const cacheDetails = (details) => {
-            (details || []).forEach((detail) => {
-              if (!detail || detail.ok === false || detail.detailError) return;
-              const row = allItems.find((r) => r.itemSeq === detail.itemSeq);
-              cache[detail.itemSeq] = mergeKeepNonEmpty(row, detail);
-            });
-          };
-
-          try {
-            const fetchedDetails = await requestDetailBatch(chunk);
-            cacheDetails(fetchedDetails);
-            const retrySeqs = fetchedDetails
-              .filter((detail) => detail?.ok === false || detail?.detailError)
-              .map((detail) => detail.itemSeq);
-            if (retrySeqs.length) {
-              await new Promise((resolve) => setTimeout(resolve, 250));
-              cacheDetails(await requestDetailBatch(retrySeqs));
-            }
-          } catch (batchErr) {
-            console.error("Batch fetch failed, retrying batch once", batchErr);
-            try {
-              await new Promise((resolve) => setTimeout(resolve, 250));
-              cacheDetails(await requestDetailBatch(chunk));
-            } catch (retryError) {
-              console.error("Batch retry failed; continuing CSV generation", retryError);
-            }
-          }
-
-          if (i + batchSize < missingSeqs.length) {
-            await new Promise((r) => setTimeout(r, 200));
-          }
-        }
-
-        if (statusEl) {
-          statusEl.textContent = `상세정보 조회 중... (${missingSeqs.length} / ${missingSeqs.length}개 완료)`;
-        }
-      }
+      unresolvedDetailCount = detailResult.unresolved.length;
     }
 
     // Step 3: Format CSV
@@ -4138,7 +4221,8 @@ async function downloadCsvAllResults(category = "human") {
         ["standardCode", "표준코드"],
         ["atcCode", "ATC코드"],
         ["performanceType", "실적구분"],
-        ["performanceUnit", "실적단위"]
+        ["performanceUnit", "실적단위"],
+        ["performanceStatus", "실적확인상태"]
       ];
       perfYears.forEach((year) => {
         headers.push([`perf_${year}`, `${year}년 생산/수입실적`]);
@@ -4157,6 +4241,7 @@ async function downloadCsvAllResults(category = "human") {
           if (key === "packageUnit") return toCsvValue(drug.packageUnit || drug.packageInfo || "");
           if (key === "performanceType") return toCsvValue(drug.performance?.type || "");
           if (key === "performanceUnit") return toCsvValue(drug.performance?.unit || "");
+          if (key === "performanceStatus") return toCsvValue(performanceStatusText(drug));
           return toCsvValue(drug[key]);
         });
         lines.push(rowData.join(","));
@@ -4174,6 +4259,9 @@ async function downloadCsvAllResults(category = "human") {
     setTimeout(() => {
       URL.revokeObjectURL(url);
     }, 250);
+    if (unresolvedDetailCount) {
+      alert(`${unresolvedDetailCount.toLocaleString("ko-KR")}개 품목은 반복 조회 후에도 상세정보를 확인하지 못했습니다. CSV의 실적확인상태 열에서 해당 품목을 확인해 주세요.`);
+    }
 
   } catch (error) {
     console.error("Client-side CSV all download failed:", error);
@@ -4202,14 +4290,14 @@ function setupCsvDropdown(buttonId, menuId, category) {
     }
   });
 
-  menu.addEventListener("click", (event) => {
+  menu.addEventListener("click", async (event) => {
     const optButton = event.target.closest("[data-csv-opt]");
     if (!optButton) return;
     const opt = optButton.dataset.csvOpt;
     if (opt === "current") {
-      downloadCsvClientSide(category);
+      await downloadCsvClientSide(category);
     } else if (opt === "all") {
-      downloadCsvAllResults(category);
+      await downloadCsvAllResults(category);
     }
     menu.setAttribute("hidden", "");
   });
