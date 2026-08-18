@@ -13,6 +13,7 @@ const require = createRequire(import.meta.url);
 const { searchMfds, getMfdsDetail, getMfdsDetailsBatch, generateMfdsCsv } = require("../lib/mfds.js");
 const { searchVetMedicines, searchAquaticMedicines, getPublicMedicineDetail, generateVetCsv, generateAquaticCsv } = require("../lib/public-medicines.js");
 const { globalSearch } = require("../lib/global-search.js");
+const { getOpenApiStatus } = require("../lib/openapi-status.js");
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const port = Number(process.env.PORT || 4173);
@@ -78,6 +79,11 @@ const server = http.createServer(async (req, res) => {
         const detailMsg = error.cause ? `${error.message} (cause: ${error.cause.message || error.cause})` : error.message;
         sendJson(res, 502, { error: "global_search_failed", message: detailMsg });
       }
+      return;
+    }
+
+    if (url.pathname === "/api/openapi-status") {
+      sendJson(res, 200, getOpenApiStatus());
       return;
     }
 

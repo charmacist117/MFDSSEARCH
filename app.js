@@ -55,13 +55,16 @@ const groupReportModal = document.querySelector("#groupReportModal");
 const groupReportContent = document.querySelector("#groupReportContent");
 const groupReportCsvButton = document.querySelector("#groupReportCsvButton");
 const groupReportCloseButton = document.querySelector("#groupReportCloseButton");
+const openApiSettingsWorkspace = document.querySelector("#openApiSettingsWorkspace");
+const openApiStatusContent = document.querySelector("#openApiStatusContent");
+const openApiStatusRefresh = document.querySelector("#openApiStatusRefresh");
 const vetWorkspace = document.querySelector("#vetWorkspace");
 const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "performance-completeness-20260804-1";
+const API_VERSION = "openapi-settings-20260818-1";
 const DETAIL_DATA_VERSION = Math.floor((Date.now() + 9 * 60 * 60 * 1000) / (24 * 60 * 60 * 1000));
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
@@ -115,6 +118,12 @@ const groupState = {
     doses: {}
   }
 };
+const openApiStatusState = {
+  data: null,
+  loading: false,
+  loaded: false,
+  error: ""
+};
 const externalStates = {
   vet: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {}, columnWidths: {} },
   aquatic: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {}, columnWidths: {} }
@@ -136,6 +145,176 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function formatOpenApiCheckedAt(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  });
+}
+
+function openApiStatusBadge(status, label) {
+  const className = status === "active" ? "is-active" : status === "error" ? "is-error" : "is-waiting";
+  return `<span class="api-connection-badge ${className}">${escapeHtml(label || status || "확인 필요")}</span>`;
+}
+
+function renderOpenApiSettings() {
+  if (!openApiStatusContent) return;
+  openApiStatusContent.setAttribute("aria-busy", String(openApiStatusState.loading));
+  if (openApiStatusRefresh) openApiStatusRefresh.disabled = openApiStatusState.loading;
+
+  if (openApiStatusState.loading && !openApiStatusState.data) {
+    openApiStatusContent.innerHTML = `<div class="api-status-loading">연결 구성을 확인하는 중입니다.</div>`;
+    return;
+  }
+
+  if (openApiStatusState.error && !openApiStatusState.data) {
+    openApiStatusContent.innerHTML = `
+      <div class="api-status-error">
+        <strong>연결 구성을 불러오지 못했습니다.</strong>
+        <span>${escapeHtml(openApiStatusState.error)}</span>
+      </div>
+    `;
+    return;
+  }
+
+  const data = openApiStatusState.data;
+  if (!data) {
+    openApiStatusContent.innerHTML = `<div class="api-status-loading">등록된 API 구성이 없습니다.</div>`;
+    return;
+  }
+
+  const services = Array.isArray(data.services) ? data.services : [];
+  const supportSources = Array.isArray(data.supportSources) ? data.supportSources : [];
+  const summary = data.summary || {};
+  const key = data.key || {};
+  const servicesHtml = services.length
+    ? services.map((service) => `
+        <tr>
+          <td>
+            <strong class="api-service-name">${escapeHtml(service.name || "-")}</strong>
+            <span class="api-service-meta">${escapeHtml(service.provider || "-")} · ${escapeHtml(service.updateCycle || "-")}</span>
+          </td>
+          <td>
+            <code class="api-service-code">${escapeHtml(service.serviceCode || "-")}</code>
+            <span class="api-service-url">${escapeHtml(service.baseUrl || "-")}</span>
+          </td>
+          <td>
+            <div class="api-operation-list">
+              ${(service.operations || []).map((operation) => `<code>${escapeHtml(operation)}</code>`).join("") || "-"}
+            </div>
+          </td>
+          <td>${escapeHtml(service.role || "-")}</td>
+          <td>${openApiStatusBadge(service.status, service.statusLabel)}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="5" class="api-empty-cell">등록된 공식 OpenAPI가 없습니다.</td></tr>`;
+
+  const supportHtml = supportSources.length
+    ? supportSources.map((source) => `
+        <tr>
+          <td>
+            <strong class="api-service-name">${escapeHtml(source.name || "-")}</strong>
+            <span class="api-service-meta">${escapeHtml(source.provider || "-")}</span>
+          </td>
+          <td><code class="api-service-code">${escapeHtml(source.serviceCode || "-")}</code></td>
+          <td>${escapeHtml(source.role || "-")}</td>
+          <td>${openApiStatusBadge(source.status, source.statusLabel)}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="4" class="api-empty-cell">등록된 보완 데이터 소스가 없습니다.</td></tr>`;
+
+  openApiStatusContent.innerHTML = `
+    <div class="api-status-banner ${key.configured ? "is-connected" : "is-waiting"}">
+      <div>
+        <strong>${escapeHtml(data.overallStatusLabel || "연결 상태 확인 필요")}</strong>
+        <span>${key.configured
+          ? "서비스키가 서버 환경변수에 등록되어 있습니다. 키 원문은 표시하지 않습니다."
+          : "서비스키가 등록되면 공식 OpenAPI 항목이 자동으로 사용 중 상태로 전환됩니다."}</span>
+      </div>
+      ${openApiStatusBadge(data.overallStatus, data.overallStatusLabel)}
+    </div>
+
+    <dl class="api-status-summary">
+      <div>
+        <dt>활성 공식 API</dt>
+        <dd>${Number(summary.activeServiceCount || 0).toLocaleString("ko-KR")} / ${Number(summary.registeredServiceCount || services.length).toLocaleString("ko-KR")}개</dd>
+      </div>
+      <div>
+        <dt>등록 오퍼레이션</dt>
+        <dd>${Number(summary.operationCount || 0).toLocaleString("ko-KR")}개</dd>
+      </div>
+      <div>
+        <dt>인증키</dt>
+        <dd>${escapeHtml(key.displayValue || "미설정")}</dd>
+        <code>${escapeHtml(key.environmentVariable || "MFDS_OPENAPI_SERVICE_KEY")}</code>
+      </div>
+      <div>
+        <dt>비밀키 저장</dt>
+        <dd>${escapeHtml(key.storage || "-")}</dd>
+      </div>
+    </dl>
+
+    <section class="api-config-section">
+      <header>
+        <div>
+          <h3>사용 중인 공식 OpenAPI</h3>
+          <p>서비스 코드와 실제 호출에 사용하는 오퍼레이션입니다.</p>
+        </div>
+        <span class="api-checked-at">마지막 확인 ${escapeHtml(formatOpenApiCheckedAt(data.checkedAt))}</span>
+      </header>
+      <div class="api-table-wrap">
+        <table class="api-config-table">
+          <thead><tr><th>서비스</th><th>API 코드</th><th>오퍼레이션</th><th>사용 범위</th><th>상태</th></tr></thead>
+          <tbody>${servicesHtml}</tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="api-config-section">
+      <header>
+        <div>
+          <h3>보완 데이터 소스</h3>
+          <p>공식 OpenAPI에 없는 상세 항목과 과거 실적을 보완하는 경로입니다.</p>
+        </div>
+      </header>
+      <div class="api-table-wrap">
+        <table class="api-config-table support-source-table">
+          <thead><tr><th>데이터 소스</th><th>식별 코드</th><th>사용 범위</th><th>상태</th></tr></thead>
+          <tbody>${supportHtml}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+async function loadOpenApiStatus({ force = false } = {}) {
+  if (openApiStatusState.loading || (openApiStatusState.loaded && !force)) return;
+  openApiStatusState.loading = true;
+  openApiStatusState.error = "";
+  renderOpenApiSettings();
+  try {
+    const response = await fetch(`/api/openapi-status?_v=${encodeURIComponent(API_VERSION)}&_refresh=${Date.now()}`, {
+      cache: "no-store"
+    });
+    if (!response.ok) throw new Error(`환경설정 요청 실패 (${response.status})`);
+    const payload = await response.json();
+    if (payload.error) throw new Error(payload.message || payload.error);
+    openApiStatusState.data = payload;
+    openApiStatusState.loaded = true;
+  } catch (error) {
+    openApiStatusState.error = friendlySearchError(error);
+  } finally {
+    openApiStatusState.loading = false;
+    renderOpenApiSettings();
+  }
 }
 
 function escapeRegExp(value) {
@@ -2611,6 +2790,7 @@ function showHome() {
   if (searchWorkspace) searchWorkspace.hidden = true;
   if (compareWorkspace) compareWorkspace.hidden = true;
   if (groupWorkspace) groupWorkspace.hidden = true;
+  if (openApiSettingsWorkspace) openApiSettingsWorkspace.hidden = true;
   if (vetWorkspace) vetWorkspace.hidden = true;
   if (aquaticWorkspace) aquaticWorkspace.hidden = true;
   document.body.classList.remove("compare-mode", "table-only");
@@ -4412,7 +4592,7 @@ detailPanel.addEventListener("click", (event) => {
 });
 
 function setWorkspaceTab(tabName) {
-  activeWorkspaceTab = tabName === "compare" || tabName === "group" ? tabName : "search";
+  activeWorkspaceTab = ["compare", "group", "settings"].includes(tabName) ? tabName : "search";
   if (homeWorkspace) homeWorkspace.hidden = true;
   homeButton?.classList.remove("active");
   workspaceTabs.forEach((button) => {
@@ -4425,6 +4605,7 @@ function setWorkspaceTab(tabName) {
   if (aquaticWorkspace) aquaticWorkspace.hidden = true;
   if (compareWorkspace) compareWorkspace.hidden = true;
   if (groupWorkspace) groupWorkspace.hidden = true;
+  if (openApiSettingsWorkspace) openApiSettingsWorkspace.hidden = true;
   document.body.classList.toggle("compare-mode", activeWorkspaceTab === "compare");
 
   if (activeWorkspaceTab === "compare") {
@@ -4438,6 +4619,13 @@ function setWorkspaceTab(tabName) {
   if (activeWorkspaceTab === "group") {
     if (groupWorkspace) groupWorkspace.hidden = false;
     renderGroupDashboard();
+    return;
+  }
+
+  if (activeWorkspaceTab === "settings") {
+    if (openApiSettingsWorkspace) openApiSettingsWorkspace.hidden = false;
+    renderOpenApiSettings();
+    loadOpenApiStatus();
     return;
   }
 
@@ -4513,6 +4701,10 @@ workspaceTabs.forEach((button) => {
   button.addEventListener("click", () => {
     setWorkspaceTab(button.dataset.workspaceTab);
   });
+});
+
+openApiStatusRefresh?.addEventListener("click", () => {
+  loadOpenApiStatus({ force: true });
 });
 
 homeSearchForm?.addEventListener("submit", (event) => {
