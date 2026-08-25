@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>의약품 상세정보 대시보드</title>
-    <link rel="stylesheet" href="./styles.css?v=20">
+    <link rel="stylesheet" href="./styles.css?v=21">
   </head>
   <body>
     <nav class="category-tabs" aria-label="의약품 분류 선택">
@@ -460,9 +460,143 @@
             <p>API 비밀키는 서버 환경변수에 보관되며 이 화면에는 키 원문이 노출되지 않습니다.</p>
           </div>
         </header>
-        <div id="openApiStatusContent" class="api-status-content" aria-live="polite">
-          <div class="api-status-loading">연결 구성을 확인하는 중입니다.</div>
+        <div class="api-settings-tabs" role="tablist" aria-label="OpenAPI 환경설정 화면">
+          <button id="openApiStatusTab" class="api-settings-tab active" type="button" role="tab" aria-selected="true" aria-controls="openApiStatusPanel" data-api-settings-tab="status">연결 현황</button>
+          <button id="openApiHelpTab" class="api-settings-tab" type="button" role="tab" aria-selected="false" aria-controls="openApiHelpPanel" data-api-settings-tab="help">연결 방법·도움말</button>
         </div>
+
+        <section id="openApiStatusPanel" class="api-settings-panel" role="tabpanel" aria-labelledby="openApiStatusTab">
+          <div id="openApiStatusContent" class="api-status-content" aria-live="polite">
+            <div class="api-status-loading">연결 구성을 확인하는 중입니다.</div>
+          </div>
+        </section>
+
+        <section id="openApiHelpPanel" class="api-settings-panel api-help-panel" role="tabpanel" aria-labelledby="openApiHelpTab" hidden>
+          <header class="api-help-intro">
+            <div>
+              <span class="api-help-eyebrow">연결 안내</span>
+              <h3>공공데이터포털 인증키를 Vercel 서버 환경변수에 등록합니다</h3>
+              <p>공식 API 두 건을 활용신청한 뒤 같은 인증키를 서버에 저장하면 됩니다. 인증키 원문은 브라우저나 GitHub 저장소에 입력하지 않습니다.</p>
+            </div>
+            <a class="api-guide-link" href="https://www.data.go.kr/" target="_blank" rel="noopener noreferrer">공공데이터포털 열기</a>
+          </header>
+
+          <ol class="api-setup-steps">
+            <li class="api-setup-step">
+              <span class="api-step-index" aria-hidden="true">1</span>
+              <div class="api-step-content">
+                <h3>공식 API 두 건 활용신청</h3>
+                <p>공공데이터포털에 로그인한 뒤 아래 서비스에서 <strong>활용신청</strong>을 누르고, 마이페이지에서 승인 상태를 확인합니다.</p>
+                <div class="api-application-list">
+                  <article>
+                    <div>
+                      <strong>의약품 제품 허가정보</strong>
+                      <span>품목 목록·상세·주성분 정보 · 실시간 갱신</span>
+                      <code>DrugPrdtPrmsnInfoService07</code>
+                    </div>
+                    <a href="https://www.data.go.kr/data/15095677/openapi.do" target="_blank" rel="noopener noreferrer">신청 페이지</a>
+                  </article>
+                  <article>
+                    <div>
+                      <strong>의약품 생산·수입실적현황</strong>
+                      <span>최근 연도 생산·수입금액과 실적연도 · 연간 갱신</span>
+                      <code>MdcinPrdctnImportAcmsltService02</code>
+                    </div>
+                    <a href="https://www.data.go.kr/data/15056880/openapi.do" target="_blank" rel="noopener noreferrer">신청 페이지</a>
+                  </article>
+                </div>
+              </div>
+            </li>
+
+            <li class="api-setup-step">
+              <span class="api-step-index" aria-hidden="true">2</span>
+              <div class="api-step-content">
+                <h3>일반 인증키 확인</h3>
+                <p>승인된 활용신청 상세 화면에서 <strong>일반 인증키(Decoding)</strong>를 확인합니다. 앞뒤 공백 없이 키 값만 사용합니다.</p>
+                <div class="api-help-note">
+                  <strong>보안 주의</strong>
+                  <span>인증키는 채팅, 화면 캡처, 소스코드, 커밋 기록에 남기지 마세요. 이 페이지도 키의 등록 여부만 표시합니다.</span>
+                </div>
+              </div>
+            </li>
+
+            <li class="api-setup-step">
+              <span class="api-step-index" aria-hidden="true">3</span>
+              <div class="api-step-content">
+                <h3>Vercel 환경변수 등록</h3>
+                <p>Vercel 프로젝트의 <strong>Settings → Environment Variables</strong>에서 아래 이름으로 추가하고, 값에는 일반 인증키를 입력합니다.</p>
+                <div class="api-env-field">
+                  <div>
+                    <span>권장 환경변수명</span>
+                    <code>MFDS_OPENAPI_SERVICE_KEY</code>
+                  </div>
+                  <button class="api-copy-button" type="button" data-copy-api-value="MFDS_OPENAPI_SERVICE_KEY">이름 복사</button>
+                </div>
+                <ul class="api-check-list">
+                  <li><strong>Production</strong>은 반드시 선택합니다.</li>
+                  <li>미리보기 배포에서도 확인하려면 <strong>Preview</strong>도 선택합니다.</li>
+                  <li><code>DATA_GO_KR_SERVICE_KEY</code>도 호환되지만 위 권장 이름을 우선 사용합니다.</li>
+                </ul>
+                <a class="api-inline-link" href="https://vercel.com/docs/environment-variables/managing-environment-variables" target="_blank" rel="noopener noreferrer">Vercel 환경변수 공식 문서</a>
+              </div>
+            </li>
+
+            <li class="api-setup-step">
+              <span class="api-step-index" aria-hidden="true">4</span>
+              <div class="api-step-content">
+                <h3>저장 후 새로 배포</h3>
+                <p>환경변수는 기존 배포에 소급 적용되지 않습니다. 저장한 다음 <strong>Deployments</strong>에서 최신 배포를 Redeploy하거나 <code>main</code>에 새 커밋을 푸시합니다.</p>
+              </div>
+            </li>
+
+            <li class="api-setup-step">
+              <span class="api-step-index" aria-hidden="true">5</span>
+              <div class="api-step-content">
+                <h3>대시보드에서 감지 상태 확인</h3>
+                <p>새 배포 주소에서 환경설정의 <strong>연결 현황</strong>으로 돌아가 새로고침합니다. 인증키가 등록되고 활성 공식 API가 <strong>2 / 2개</strong>로 표시되면 서버가 환경변수를 감지한 상태입니다.</p>
+                <div class="api-help-caveat">
+                  이 상태는 환경변수 등록 여부를 확인합니다. 인증키 승인·유효성, 호출 한도, 실제 응답은 검색 요청 시 공공데이터포털 응답으로 최종 확인됩니다.
+                </div>
+              </div>
+            </li>
+          </ol>
+
+          <section class="api-troubleshooting" aria-labelledby="apiTroubleshootingTitle">
+            <header>
+              <h3 id="apiTroubleshootingTitle">연결이 되지 않을 때</h3>
+              <p>증상에 맞는 항목부터 확인합니다.</p>
+            </header>
+            <div class="api-troubleshooting-table-wrap">
+              <table>
+                <thead><tr><th>증상</th><th>확인할 내용</th></tr></thead>
+                <tbody>
+                  <tr><td>계속 ‘미설정’으로 표시됨</td><td>환경변수 이름의 철자, Production 적용 여부, 등록 후 재배포 여부를 확인합니다.</td></tr>
+                  <tr><td>인증키 오류 또는 401 응답</td><td>일반 인증키(Decoding)를 사용했는지, 두 API의 활용신청이 승인됐는지, 키 앞뒤에 공백이 없는지 확인합니다.</td></tr>
+                  <tr><td>요청 한도 또는 429 응답</td><td>공공데이터포털 마이페이지에서 일일 트래픽과 활용계정 상태를 확인합니다.</td></tr>
+                  <tr><td>시간 초과 또는 5xx 응답</td><td>잠시 뒤 재시도하고, 공공데이터포털 서비스 상태와 Vercel Function 로그를 확인합니다.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="api-help-faq" aria-labelledby="apiHelpFaqTitle">
+            <header>
+              <h3 id="apiHelpFaqTitle">자주 묻는 내용</h3>
+            </header>
+            <details>
+              <summary>왜 인증키를 이 화면에서 직접 입력하지 않나요?</summary>
+              <p>브라우저에 입력한 키는 개발자 도구나 네트워크 기록을 통해 노출될 수 있습니다. 서버 환경변수에 저장해야 API 호출에만 사용되고 화면에는 원문이 전달되지 않습니다.</p>
+            </details>
+            <details>
+              <summary>API 두 건을 모두 신청해야 하나요?</summary>
+              <p>허가정보 검색에는 제품 허가정보 API가 필요하고, 생산·수입실적을 함께 보려면 생산·수입실적현황 API도 필요합니다. 현재 대시보드 기능 전체를 사용하려면 두 건 모두 신청하는 것이 맞습니다.</p>
+            </details>
+            <details>
+              <summary>환경변수를 바꿨는데 이전 배포 주소에는 왜 반영되지 않나요?</summary>
+              <p>Vercel 환경변수 변경은 새로 생성되는 배포부터 적용됩니다. 최신 커밋을 다시 배포한 뒤 새 배포 또는 운영 도메인에서 확인해야 합니다.</p>
+            </details>
+          </section>
+        </section>
       </section>
     </section>
 
@@ -738,6 +872,6 @@
       </main>
     </section>
 
-    <script src="./app.js?v=60"></script>
+    <script src="./app.js?v=61"></script>
   </body>
 </html>

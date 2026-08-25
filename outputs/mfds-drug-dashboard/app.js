@@ -58,13 +58,16 @@ const groupReportCloseButton = document.querySelector("#groupReportCloseButton")
 const openApiSettingsWorkspace = document.querySelector("#openApiSettingsWorkspace");
 const openApiStatusContent = document.querySelector("#openApiStatusContent");
 const openApiStatusRefresh = document.querySelector("#openApiStatusRefresh");
+const openApiSettingsTabs = document.querySelectorAll("[data-api-settings-tab]");
+const openApiStatusPanel = document.querySelector("#openApiStatusPanel");
+const openApiHelpPanel = document.querySelector("#openApiHelpPanel");
 const vetWorkspace = document.querySelector("#vetWorkspace");
 const aquaticWorkspace = document.querySelector("#aquaticWorkspace");
 const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "openapi-settings-20260818-1";
+const API_VERSION = "openapi-settings-help-20260824-1";
 const DETAIL_DATA_VERSION = Math.floor((Date.now() + 9 * 60 * 60 * 1000) / (24 * 60 * 60 * 1000));
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
@@ -124,6 +127,7 @@ const openApiStatusState = {
   loaded: false,
   error: ""
 };
+let activeOpenApiSettingsTab = "status";
 const externalStates = {
   vet: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {}, columnWidths: {} },
   aquatic: { page: 1, total: 0, totalPages: 1, rows: [], loading: false, error: "", notice: "", loaded: false, selectedKey: "", detailLoadingKey: "", detailCache: {}, columnWidths: {} }
@@ -163,6 +167,44 @@ function formatOpenApiCheckedAt(value) {
 function openApiStatusBadge(status, label) {
   const className = status === "active" ? "is-active" : status === "error" ? "is-error" : "is-waiting";
   return `<span class="api-connection-badge ${className}">${escapeHtml(label || status || "확인 필요")}</span>`;
+}
+
+function setOpenApiSettingsTab(tabName) {
+  activeOpenApiSettingsTab = tabName === "help" ? "help" : "status";
+  openApiSettingsTabs.forEach((button) => {
+    const active = button.dataset.apiSettingsTab === activeOpenApiSettingsTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  if (openApiStatusPanel) openApiStatusPanel.hidden = activeOpenApiSettingsTab !== "status";
+  if (openApiHelpPanel) openApiHelpPanel.hidden = activeOpenApiSettingsTab !== "help";
+  if (openApiStatusRefresh) openApiStatusRefresh.hidden = activeOpenApiSettingsTab !== "status";
+}
+
+async function copyApiHelpValue(button) {
+  const value = String(button?.dataset.copyApiValue || "").trim();
+  if (!value) return;
+  const previousLabel = button.textContent;
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+    await navigator.clipboard.writeText(value);
+    button.textContent = "복사됨";
+  } catch {
+    const input = document.createElement("textarea");
+    input.value = value;
+    input.setAttribute("readonly", "");
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.append(input);
+    input.select();
+    const copied = document.execCommand("copy");
+    input.remove();
+    button.textContent = copied ? "복사됨" : "복사 실패";
+  }
+  window.setTimeout(() => {
+    button.textContent = previousLabel;
+  }, 1600);
 }
 
 function renderOpenApiSettings() {
@@ -4624,6 +4666,7 @@ function setWorkspaceTab(tabName) {
 
   if (activeWorkspaceTab === "settings") {
     if (openApiSettingsWorkspace) openApiSettingsWorkspace.hidden = false;
+    setOpenApiSettingsTab(activeOpenApiSettingsTab);
     renderOpenApiSettings();
     loadOpenApiStatus();
     return;
@@ -4703,8 +4746,31 @@ workspaceTabs.forEach((button) => {
   });
 });
 
+openApiSettingsTabs.forEach((button, index) => {
+  button.addEventListener("click", () => {
+    setOpenApiSettingsTab(button.dataset.apiSettingsTab);
+    if (activeOpenApiSettingsTab === "status") loadOpenApiStatus();
+  });
+  button.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    let nextIndex = index;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + openApiSettingsTabs.length) % openApiSettingsTabs.length;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % openApiSettingsTabs.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = openApiSettingsTabs.length - 1;
+    openApiSettingsTabs[nextIndex]?.focus();
+    openApiSettingsTabs[nextIndex]?.click();
+  });
+});
+
 openApiStatusRefresh?.addEventListener("click", () => {
   loadOpenApiStatus({ force: true });
+});
+
+openApiHelpPanel?.addEventListener("click", (event) => {
+  const copyButton = event.target.closest("[data-copy-api-value]");
+  if (copyButton) copyApiHelpValue(copyButton);
 });
 
 homeSearchForm?.addEventListener("submit", (event) => {

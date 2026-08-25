@@ -1172,6 +1172,65 @@ button:focus-visible {
   font-size: 12px;
 }
 
+.api-settings-tabs {
+  display: flex;
+  align-items: end;
+  min-height: 44px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  background: #f5f8f9;
+}
+
+.api-settings-tab {
+  position: relative;
+  min-width: 124px;
+  height: 43px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: #53666f;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 18px;
+}
+
+.api-settings-tab:first-child {
+  border-left: 1px solid var(--border);
+}
+
+.api-settings-tab:hover {
+  background: #edf5f7;
+  color: var(--teal-dark);
+}
+
+.api-settings-tab.active {
+  background: #fff;
+  color: var(--teal-dark);
+}
+
+.api-settings-tab.active::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  left: -1px;
+  height: 3px;
+  background: var(--teal);
+}
+
+.api-settings-tab:focus-visible {
+  outline: 2px solid #168eaa;
+  outline-offset: -3px;
+}
+
+.api-settings-panel {
+  min-width: 0;
+}
+
+.api-settings-panel[hidden] {
+  display: none;
+}
+
 .api-status-content {
   display: grid;
   min-width: 0;
@@ -1430,6 +1489,356 @@ button:focus-visible {
 .api-empty-cell {
   color: var(--muted);
   text-align: center !important;
+}
+
+.api-help-panel {
+  color: #203640;
+  background: #fff;
+}
+
+.api-help-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 20px;
+  border-bottom: 1px solid var(--border);
+  background: #f8fafb;
+}
+
+.api-help-intro h3,
+.api-step-content h3,
+.api-troubleshooting h3,
+.api-help-faq h3 {
+  margin: 0;
+  color: #102a35;
+}
+
+.api-help-intro h3 {
+  margin-top: 5px;
+  font-size: 17px;
+}
+
+.api-help-intro p,
+.api-step-content > p,
+.api-troubleshooting header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.api-help-eyebrow {
+  color: #267184;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.api-guide-link,
+.api-application-list a,
+.api-inline-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #9fc3cd;
+  border-radius: 4px;
+  background: #fff;
+  color: #0d6179;
+  font-size: 11px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.api-guide-link {
+  min-width: 144px;
+  min-height: 36px;
+  padding: 8px 14px;
+  white-space: nowrap;
+}
+
+.api-guide-link:hover,
+.api-application-list a:hover,
+.api-inline-link:hover {
+  border-color: var(--teal);
+  background: #edf8fa;
+}
+
+.api-setup-steps {
+  margin: 0;
+  padding: 0 20px;
+  list-style: none;
+  counter-reset: none;
+}
+
+.api-setup-step {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 14px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #84b7c4;
+  border-radius: 50%;
+  background: #eaf6f8;
+  color: #0c6680;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.api-step-content {
+  min-width: 0;
+}
+
+.api-step-content h3 {
+  font-size: 14px;
+}
+
+.api-application-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.api-application-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #f9fbfc;
+}
+
+.api-application-list article > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.api-application-list strong {
+  color: #183541;
+  font-size: 12px;
+}
+
+.api-application-list span {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.api-application-list code {
+  color: #17677c;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.api-application-list a {
+  min-width: 82px;
+  min-height: 32px;
+  padding: 6px 9px;
+  white-space: nowrap;
+}
+
+.api-help-note,
+.api-help-caveat {
+  margin-top: 12px;
+  padding: 11px 13px;
+  border-left: 3px solid #d5a936;
+  background: #fff9eb;
+  color: #624d18;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.api-help-note {
+  display: grid;
+  gap: 3px;
+}
+
+.api-help-note strong {
+  color: #594413;
+}
+
+.api-help-caveat {
+  border-left-color: #4e91a3;
+  background: #f1f8fa;
+  color: #385c66;
+}
+
+.api-env-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 620px;
+  margin-top: 14px;
+  padding: 11px 12px;
+  border: 1px solid #bdd5dc;
+  background: #f4f9fa;
+}
+
+.api-env-field > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.api-env-field span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.api-env-field code {
+  color: #0b5f77;
+  font-size: 12px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.api-copy-button {
+  min-width: 76px;
+  height: 30px;
+  border: 1px solid #7baebb;
+  border-radius: 4px;
+  background: #fff;
+  color: #0b6078;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.api-copy-button:hover {
+  border-color: var(--teal);
+  background: #eaf7f9;
+}
+
+.api-check-list {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #53666f;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.api-check-list code {
+  color: #0b6078;
+}
+
+.api-inline-link {
+  min-height: 30px;
+  margin-top: 12px;
+  padding: 5px 9px;
+}
+
+.api-troubleshooting,
+.api-help-faq {
+  padding: 22px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-troubleshooting header,
+.api-help-faq > header {
+  margin-bottom: 12px;
+}
+
+.api-troubleshooting h3,
+.api-help-faq h3 {
+  font-size: 14px;
+}
+
+.api-troubleshooting-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.api-troubleshooting table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 11px;
+}
+
+.api-troubleshooting th,
+.api-troubleshooting td {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+  line-height: 1.5;
+}
+
+.api-troubleshooting th {
+  background: #edf3f5;
+  color: #40545d;
+}
+
+.api-troubleshooting th:first-child {
+  width: 28%;
+}
+
+.api-help-faq {
+  border-bottom: 0;
+}
+
+.api-help-faq details {
+  border-top: 1px solid var(--border);
+}
+
+.api-help-faq details:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.api-help-faq summary {
+  position: relative;
+  padding: 12px 36px 12px 4px;
+  color: #29434d;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+}
+
+.api-help-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.api-help-faq summary::after {
+  content: "+";
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 20px;
+  color: #21748a;
+  font-size: 18px;
+  text-align: center;
+  transform: translateY(-50%);
+}
+
+.api-help-faq details[open] summary::after {
+  content: "−";
+}
+
+.api-help-faq details p {
+  margin: 0;
+  padding: 0 36px 14px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.65;
 }
 
 .group-header {
@@ -2876,6 +3285,60 @@ body.table-only .detail-panel {
   .api-status-banner,
   .api-config-section > header {
     display: grid;
+  }
+
+  .api-settings-tabs {
+    padding: 0;
+  }
+
+  .api-settings-tab {
+    flex: 1 1 50%;
+    min-width: 0;
+    padding: 0 8px;
+  }
+
+  .api-help-intro {
+    display: grid;
+    gap: 14px;
+    padding: 18px 14px;
+  }
+
+  .api-guide-link {
+    width: 100%;
+  }
+
+  .api-setup-steps {
+    padding: 0 14px;
+  }
+
+  .api-setup-step {
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 10px;
+    padding: 18px 0;
+  }
+
+  .api-step-index {
+    width: 26px;
+    height: 26px;
+  }
+
+  .api-application-list {
+    grid-template-columns: 1fr;
+  }
+
+  .api-application-list article,
+  .api-env-field {
+    display: grid;
+  }
+
+  .api-application-list a,
+  .api-copy-button {
+    width: 100%;
+  }
+
+  .api-troubleshooting,
+  .api-help-faq {
+    padding: 18px 14px;
   }
 
   .api-status-content {
