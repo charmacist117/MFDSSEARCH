@@ -67,7 +67,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "openapi-settings-help-20260824-1";
+const API_VERSION = "openapi-priority-fallback-20260826-2";
 const DETAIL_DATA_VERSION = Math.floor((Date.now() + 9 * 60 * 60 * 1000) / (24 * 60 * 60 * 1000));
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
@@ -278,8 +278,8 @@ function renderOpenApiSettings() {
       <div>
         <strong>${escapeHtml(data.overallStatusLabel || "연결 상태 확인 필요")}</strong>
         <span>${key.configured
-          ? "서비스키가 서버 환경변수에 등록되어 있습니다. 키 원문은 표시하지 않습니다."
-          : "서비스키가 등록되면 공식 OpenAPI 항목이 자동으로 사용 중 상태로 전환됩니다."}</span>
+          ? "검색 시 공식 허가정보 OpenAPI를 먼저 호출하고, 오류 또는 미지원 조건에서는 기존 검색으로 자동 전환합니다."
+          : "서비스키가 없어 기존 의약품안전나라 검색을 자동 사용합니다. 키를 등록하면 OpenAPI 우선 검색으로 전환됩니다."}</span>
       </div>
       ${openApiStatusBadge(data.overallStatus, data.overallStatusLabel)}
     </div>
@@ -307,8 +307,8 @@ function renderOpenApiSettings() {
     <section class="api-config-section">
       <header>
         <div>
-          <h3>사용 중인 공식 OpenAPI</h3>
-          <p>서비스 코드와 실제 호출에 사용하는 오퍼레이션입니다.</p>
+          <h3>공식 OpenAPI 연결 대상</h3>
+          <p>서비스 코드와 검색 시 우선 호출하는 오퍼레이션입니다.</p>
         </div>
         <span class="api-checked-at">마지막 확인 ${escapeHtml(formatOpenApiCheckedAt(data.checkedAt))}</span>
       </header>
@@ -323,8 +323,8 @@ function renderOpenApiSettings() {
     <section class="api-config-section">
       <header>
         <div>
-          <h3>보완 데이터 소스</h3>
-          <p>공식 OpenAPI에 없는 상세 항목과 과거 실적을 보완하는 경로입니다.</p>
+          <h3>자동 대체·보완 데이터 소스</h3>
+          <p>OpenAPI 오류·미지원 조건에서 자동 전환하고 상세 항목과 과거 실적을 보완합니다.</p>
         </div>
       </header>
       <div class="api-table-wrap">
@@ -805,12 +805,12 @@ function buildSearchParams() {
     params.set("timeoutMs", "10000");
     params.set("retries", "2");
     params.set("fastFail", "0");
-    params.set("contractScanPages", "3");
-    params.set("contractCandidateLimit", "45");
-    params.set("contractBudgetMs", "20000");
-    params.set("detailTimeoutMs", "3500");
+    params.set("contractScanPages", "12");
+    params.set("contractCandidateLimit", "0");
+    params.set("contractBudgetMs", "55000");
+    params.set("detailTimeoutMs", "5000");
     params.set("detailRetries", "1");
-    params.set("detailConcurrency", "5");
+    params.set("detailConcurrency", "10");
   }
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
@@ -914,12 +914,12 @@ function compactParams(values, filters, page) {
     params.set("timeoutMs", "10000");
     params.set("retries", "2");
     params.set("fastFail", "0");
-    params.set("contractScanPages", "3");
-    params.set("contractCandidateLimit", "45");
-    params.set("contractBudgetMs", "20000");
-    params.set("detailTimeoutMs", "3500");
+    params.set("contractScanPages", "12");
+    params.set("contractCandidateLimit", "0");
+    params.set("contractBudgetMs", "55000");
+    params.set("detailTimeoutMs", "5000");
     params.set("detailRetries", "1");
-    params.set("detailConcurrency", "5");
+    params.set("detailConcurrency", "10");
   }
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
@@ -3029,7 +3029,7 @@ function applyHomeKeywordToForm(formEl, label, keyword) {
 function openHomeHumanResult(result) {
   const group = homeSearchState.groups.find((item) => item.key === "human");
   const rows = (group?.items || []).map((item, index) => ({ ...item.row, rowNumber: String(index + 1) }));
-  setCategoryTab("human", { autoLoad: false });
+  setCategoryTab("human");
   setWorkspaceTab("search");
   resetHumanSearchFilters();
   applyHomeKeywordToForm(form, result.matchLabel || preferredHomeMatchLabel(group), homeSearchState.keyword);
@@ -3085,7 +3085,7 @@ function openHomeCategoryResults(category) {
   activeSearchKeyword = homeSearchState.keyword;
 
   if (category === "human") {
-    setCategoryTab("human", { autoLoad: false });
+    setCategoryTab("human");
     setWorkspaceTab("search");
     resetHumanSearchFilters();
     applyHomeKeywordToForm(form, label, searchTerm);
@@ -3796,7 +3796,9 @@ function renderResults() {
   prevPage.disabled = state.page <= 1 || state.listLoading;
   nextPage.disabled = state.page >= state.totalPages || state.listLoading;
   goPage.disabled = state.listLoading;
-  statusText.textContent = state.listLoading ? "목록을 불러오는 중" : state.error || state.notice || "MFDS 실시간 목록";
+  statusText.textContent = state.listLoading
+    ? "목록을 불러오는 중"
+    : state.error || state.notice || (state.loaded ? "MFDS 실시간 목록" : "검색 조건 입력 대기");
 
   const perfYears = getPerformanceYears();
   const totalCols = 11 + perfYears.length;
@@ -3852,7 +3854,10 @@ function renderResults() {
   }
 
   if (!state.rows.length) {
-    resultBody.innerHTML = `<tr><td colspan="${totalCols}" class="table-message">검색 결과가 없습니다.</td></tr>`;
+    const emptyMessage = state.loaded
+      ? "검색 결과가 없습니다."
+      : "검색 조건을 입력하고 검색 버튼을 눌러주세요.";
+    resultBody.innerHTML = `<tr><td colspan="${totalCols}" class="table-message">${emptyMessage}</td></tr>`;
     return;
   }
 
@@ -3976,7 +3981,7 @@ function renderDetail() {
   }
 
   if (!drug) {
-    detailPanel.innerHTML = `<div class="detail-empty">검색 결과에서 제품을 선택하세요.</div>`;
+    detailPanel.innerHTML = `<div class="detail-empty">${state.loaded ? "검색 결과에서 제품을 선택하세요." : "검색 후 제품을 선택하면 상세정보가 표시됩니다."}</div>`;
     return;
   }
 
@@ -4549,7 +4554,21 @@ form.addEventListener("reset", () => {
     extraWrap.classList.add("collapsed");
     if (toggle) toggle.setAttribute("aria-expanded", "false");
   }
-  setTimeout(() => loadResults({ resetPage: true }), 0);
+  setTimeout(() => {
+    preloadGeneration += 1;
+    state.rows = [];
+    state.total = 0;
+    state.page = 1;
+    state.pageSize = 10;
+    state.totalPages = 1;
+    state.selectedSeq = "";
+    state.listLoading = false;
+    state.unitDoseLoading = false;
+    state.loaded = false;
+    state.error = "";
+    state.notice = "";
+    render();
+  }, 0);
 });
 
 form.addEventListener("change", (event) => {
@@ -4680,7 +4699,7 @@ function setWorkspaceTab(tabName) {
     if (!externalStates.aquatic.loaded) loadExternalResults("aquatic");
   } else {
     if (searchWorkspace) searchWorkspace.hidden = false;
-    maybeAutoLoadHumanResults();
+    render();
   }
 }
 
@@ -4688,16 +4707,7 @@ function currentWorkspaceTab() {
   return activeWorkspaceTab || document.querySelector("[data-workspace-tab].active")?.dataset.workspaceTab || "search";
 }
 
-function maybeAutoLoadHumanResults({ force = false } = {}) {
-  const humanTabActive = activeCategory === "human";
-  const searchVisible = searchWorkspace && !searchWorkspace.hidden;
-  if (!humanTabActive || !searchVisible || state.listLoading) return;
-  const emptyStaleState = state.loaded && state.total === 0 && !state.rows.length && !state.error;
-  if (!force && state.loaded && !emptyStaleState) return;
-  loadResults({ resetPage: true });
-}
-
-function setCategoryTab(categoryName, { autoLoad = true } = {}) {
+function setCategoryTab(categoryName) {
   activeCategory = categoryName === "vet" || categoryName === "aquatic" ? categoryName : "human";
   if (homeWorkspace) homeWorkspace.hidden = true;
   homeButton?.classList.remove("active");
@@ -4709,7 +4719,6 @@ function setCategoryTab(categoryName, { autoLoad = true } = {}) {
 
   document.querySelector(".workspace-tabs")?.removeAttribute("hidden");
   setWorkspaceTab(currentWorkspaceTab());
-  if (autoLoad && activeCategory === "human") maybeAutoLoadHumanResults();
 }
 
 function syncVisibleCompareForms() {

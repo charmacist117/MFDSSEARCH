@@ -15,6 +15,10 @@ const {
   mapConcurrent,
   MemoryCache
 } = require("./utils");
+const {
+  openApiSearchEligibility,
+  searchMfdsOpenApi
+} = require("./mfds-openapi");
 
 const BASE_URL = "https://nedrug.mfds.go.kr";
 const MFDS_FETCH_HEADERS = {
@@ -1207,10 +1211,19 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
 
   const firstPage = await fetchSearchPage(nativeQuery, 1);
   const nativePageSize = firstPage.parsed.items.length || 15;
-  const requestedScanPages = Number(valueOf(query.contractScanPages) || valueOf(query.presenceScanPages) || 3);
-  const maxScanPages = Math.min(Math.max(requestedScanPages, page), 25);
+  const nativeTotalPages = firstPage.parsed.total
+    ? Math.ceil(firstPage.parsed.total / nativePageSize)
+    : 1;
+  const requestedScanPages = Number(valueOf(query.contractScanPages) || valueOf(query.presenceScanPages));
+  const defaultScanPages = nativeTotalPages <= 12 ? nativeTotalPages : 3;
+  const maxScanPages = Math.min(Math.max(requestedScanPages || defaultScanPages, page), 25);
   const allCandidates = await collectSearchPages(nativeQuery, firstPage, maxScanPages);
-  const candidateLimit = Math.max(Number(valueOf(query.contractCandidateLimit) || 30), 0);
+  const candidateLimitValue = valueOf(query.contractCandidateLimit);
+  const candidateLimit = candidateLimitValue
+    ? Math.max(Number(candidateLimitValue), 0)
+    : nativeTotalPages <= 12
+      ? 0
+      : 30;
   const pageCandidateFloor = page * nativePageSize * 2;
   const detailCandidateLimit = candidateLimit ? Math.max(candidateLimit, pageCandidateFloor) : allCandidates.length;
   const candidateItems = candidateLimit ? allCandidates.slice(0, detailCandidateLimit) : allCandidates;
@@ -1298,7 +1311,7 @@ async function searchMfdsByContractManufacturer(query, page, cacheKey) {
   });
 }
 
-async function searchMfds(query = {}) {
+async function searchMfdsLegacy(query = {}) {
   const page = Math.max(Number(valueOf(query.page) || 1), 1);
   const cacheKey = buildQueryCacheKey({ ...query, page });
   const cached = searchMemoryCache.get(cacheKey);
@@ -1388,6 +1401,75 @@ async function searchMfds(query = {}) {
     notice,
     sourceUrl: url
   });
+}
+
+function queryHasOpenApiFilter(query = {}) {
+  return ["productName", "companyName", "itemSeq", "ingredient1"]
+    .some((field) => normalSearchValue(query[field]));
+}
+
+function withLegacySearchSource(payload, { notice, reason, attempted }) {
+  return {
+    ...payload,
+    notice: [notice, payload?.notice || ""].filter(Boolean).join(" "),
+    dataSource: "nedrug",
+    dataSourceLabel: "의약품안전나라 기존 검색",
+    fallbackUsed: true,
+    fallbackReason: reason || "",
+    openApiAttempted: Boolean(attempted)
+  };
+}
+
+function openApiFallbackCode(error) {
+  return String(error?.code || "")
+    .replace(/[^A-Z0-9_-]/gi, "")
+    .slice(0, 40);
+}
+
+async function searchMfds(query = {}) {
+  const eligibility = openApiSearchEligibility(query);
+  if (!eligibility.eligible) {
+    const payload = await searchMfdsLegacy(query);
+    if (eligibility.reason === "key_missing") {
+      return withLegacySearchSource(payload, {
+        notice: "OpenAPI 서비스키가 없어 기존 의약품안전나라 검색으로 조회했습니다.",
+        reason: eligibility.reason,
+        attempted: false
+      });
+    }
+    return withLegacySearchSource(payload, {
+      notice: "공식 OpenAPI에서 직접 처리하지 않는 조건이 포함되어 기존 의약품안전나라 검색으로 자동 전환했습니다.",
+      reason: eligibility.reason,
+      attempted: false
+    });
+  }
+
+  try {
+    const openApiPayload = await searchMfdsOpenApi(query);
+    if (openApiPayload.total === 0 && queryHasOpenApiFilter(query)) {
+      try {
+        const legacyPayload = await searchMfdsLegacy(query);
+        if (Number(legacyPayload.total || 0) > 0) {
+          return withLegacySearchSource(legacyPayload, {
+            notice: "공식 OpenAPI 결과가 0건이어서 기존 의약품안전나라 검색으로 자동 재확인했습니다.",
+            reason: "openapi_empty_legacy_match",
+            attempted: true
+          });
+        }
+      } catch {
+        // The OpenAPI response is still a valid zero-result response.
+      }
+    }
+    return { ...openApiPayload, openApiAttempted: true };
+  } catch (error) {
+    const legacyPayload = await searchMfdsLegacy(query);
+    const code = openApiFallbackCode(error);
+    return withLegacySearchSource(legacyPayload, {
+      notice: `공식 OpenAPI 조회에 실패${code ? ` (${code})` : ""}하여 기존 의약품안전나라 검색으로 자동 전환했습니다.`,
+      reason: code || "openapi_error",
+      attempted: true
+    });
+  }
 }
 
 async function getMfdsDetail(itemSeq, options = {}) {

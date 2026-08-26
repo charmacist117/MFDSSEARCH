@@ -7,6 +7,7 @@
     "serve": "node scripts/local-server.mjs",
     "scrape:samples": "node scripts/scrape-mfds.mjs --itemSeq 202601126,201404452,202204314 --out data/drugs.sample.json",
     "scrape:page1": "node scripts/scrape-mfds.mjs --pages 1-1 --limit 10 --out data/drugs.json",
+    "test:openapi": "node scripts/test-openapi.mjs",
     "test:performance": "node scripts/test-performance.mjs"
   },
   "engines": {
