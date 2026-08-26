@@ -67,7 +67,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "openapi-priority-fallback-20260826-2";
+const API_VERSION = "openapi-priority-fallback-20260826-3";
 const DETAIL_DATA_VERSION = Math.floor((Date.now() + 9 * 60 * 60 * 1000) / (24 * 60 * 60 * 1000));
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
@@ -805,10 +805,10 @@ function buildSearchParams() {
     params.set("timeoutMs", "10000");
     params.set("retries", "2");
     params.set("fastFail", "0");
-    params.set("contractScanPages", "12");
-    params.set("contractCandidateLimit", "0");
-    params.set("contractBudgetMs", "55000");
-    params.set("detailTimeoutMs", "5000");
+    params.set("contractScanPages", "1");
+    params.set("contractCandidateLimit", "15");
+    params.set("contractBudgetMs", "8500");
+    params.set("detailTimeoutMs", "2500");
     params.set("detailRetries", "1");
     params.set("detailConcurrency", "10");
   }
@@ -914,10 +914,10 @@ function compactParams(values, filters, page) {
     params.set("timeoutMs", "10000");
     params.set("retries", "2");
     params.set("fastFail", "0");
-    params.set("contractScanPages", "12");
-    params.set("contractCandidateLimit", "0");
-    params.set("contractBudgetMs", "55000");
-    params.set("detailTimeoutMs", "5000");
+    params.set("contractScanPages", "1");
+    params.set("contractCandidateLimit", "15");
+    params.set("contractBudgetMs", "8500");
+    params.set("detailTimeoutMs", "2500");
     params.set("detailRetries", "1");
     params.set("detailConcurrency", "10");
   }
@@ -935,12 +935,12 @@ function buildGroupParams(page = 1) {
   params.set("fastFail", "0");
   params.set("presenceScanPages", "10");
   params.set("detailCandidateLimit", "120");
-  params.set("contractScanPages", "10");
-  params.set("contractCandidateLimit", "120");
-  params.set("contractBudgetMs", "45000");
-  params.set("detailTimeoutMs", "5000");
+  params.set("contractScanPages", "1");
+  params.set("contractCandidateLimit", "15");
+  params.set("contractBudgetMs", "8500");
+  params.set("detailTimeoutMs", "2500");
   params.set("detailRetries", "1");
-  params.set("detailConcurrency", "5");
+  params.set("detailConcurrency", "10");
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
   }
