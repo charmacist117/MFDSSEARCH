@@ -67,7 +67,7 @@ const addCompareSlotButton = document.querySelector("#addCompareSlot");
 const compareSlots = document.querySelector("#compareSlots");
 const compareSharedDetail = document.querySelector("#compareSharedDetail");
 const compareSlotLimit = 5;
-const API_VERSION = "openapi-priority-fallback-20260826-3";
+const API_VERSION = "openapi-priority-fallback-20260826-4";
 const DETAIL_DATA_VERSION = Math.floor((Date.now() + 9 * 60 * 60 * 1000) / (24 * 60 * 60 * 1000));
 const GROUP_DETAIL_BATCH_SIZE = 8;
 const GROUP_DETAIL_BATCH_DELAY_MS = 160;
@@ -807,10 +807,10 @@ function buildSearchParams() {
     params.set("fastFail", "0");
     params.set("contractScanPages", "1");
     params.set("contractCandidateLimit", "15");
-    params.set("contractBudgetMs", "8500");
-    params.set("detailTimeoutMs", "2500");
+    params.set("contractBudgetMs", "9000");
+    params.set("detailTimeoutMs", "6000");
     params.set("detailRetries", "1");
-    params.set("detailConcurrency", "10");
+    params.set("detailConcurrency", "15");
   }
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
@@ -916,10 +916,10 @@ function compactParams(values, filters, page) {
     params.set("fastFail", "0");
     params.set("contractScanPages", "1");
     params.set("contractCandidateLimit", "15");
-    params.set("contractBudgetMs", "8500");
-    params.set("detailTimeoutMs", "2500");
+    params.set("contractBudgetMs", "9000");
+    params.set("detailTimeoutMs", "6000");
     params.set("detailRetries", "1");
-    params.set("detailConcurrency", "10");
+    params.set("detailConcurrency", "15");
   }
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
@@ -937,10 +937,10 @@ function buildGroupParams(page = 1) {
   params.set("detailCandidateLimit", "120");
   params.set("contractScanPages", "1");
   params.set("contractCandidateLimit", "15");
-  params.set("contractBudgetMs", "8500");
-  params.set("detailTimeoutMs", "2500");
+  params.set("contractBudgetMs", "9000");
+  params.set("detailTimeoutMs", "6000");
   params.set("detailRetries", "1");
-  params.set("detailConcurrency", "10");
+  params.set("detailConcurrency", "15");
   for (const [key, value] of [...params.entries()]) {
     if (value === "") params.delete(key);
   }
