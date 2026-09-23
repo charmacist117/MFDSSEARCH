@@ -12,6 +12,7 @@ const state = {
   loaded: false,
   error: "",
   notice: "",
+  incomplete: false,
   filters: {
     itemCategory: "",
     cancelStatus: "",
@@ -3480,6 +3481,7 @@ async function loadResults({ resetPage = false } = {}) {
     state.rows = payload.items || [];
     state.total = Number(payload.total || 0);
     state.notice = payload.notice || "";
+    state.incomplete = payload.incomplete === true;
     state.page = Number(payload.page || state.page);
     state.pageSize = Number(payload.pageSize || state.rows.length || 10);
     state.totalPages = Math.max(Number(payload.totalPages || 1), 1);
@@ -3497,6 +3499,7 @@ async function loadResults({ resetPage = false } = {}) {
     state.unitDoseLoading = false;
     state.error = friendlySearchError(error);
     state.notice = "";
+    state.incomplete = false;
     render();
   }
 }
@@ -3783,7 +3786,7 @@ async function loadDetail(itemSeq, { force = false } = {}) {
 function renderResults() {
   const pageStart = state.total && state.rows.length ? (state.page - 1) * state.pageSize + 1 : 0;
   const pageEnd = state.total && state.rows.length ? pageStart + state.rows.length - 1 : 0;
-  resultCount.innerHTML = `총 <strong>${state.total.toLocaleString("ko-KR")}</strong> 건 <span class="muted">(${pageStart.toLocaleString("ko-KR")}-${pageEnd.toLocaleString("ko-KR")})</span>`;
+  resultCount.innerHTML = `${state.incomplete ? "부분 확인" : "총"} <strong>${state.total.toLocaleString("ko-KR")}</strong> 건 <span class="muted">(${pageStart.toLocaleString("ko-KR")}-${pageEnd.toLocaleString("ko-KR")})</span>`;
   pageInfo.textContent = `${state.page.toLocaleString("ko-KR")} / ${state.totalPages.toLocaleString("ko-KR")}`;
   pageInput.value = String(state.page);
   pageInput.max = String(state.totalPages);
@@ -3849,7 +3852,9 @@ function renderResults() {
 
   if (!state.rows.length) {
     const emptyMessage = state.loaded
-      ? "검색 결과가 없습니다."
+      ? state.incomplete
+        ? "현재 확인한 후보에서 일치하는 제품이 없습니다. 검색 범위가 넓어 전체 후보는 아직 확인하지 못했습니다."
+        : "검색 결과가 없습니다."
       : "검색 조건을 입력하고 검색 버튼을 눌러주세요.";
     resultBody.innerHTML = `<tr><td colspan="${totalCols}" class="table-message">${emptyMessage}</td></tr>`;
     return;

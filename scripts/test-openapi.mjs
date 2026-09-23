@@ -150,6 +150,7 @@ try {
   });
   assert.equal(contractResult.dataSource, "nedrug");
   assert.equal(contractResult.total, 1);
+  assert.equal(contractResult.incomplete, false);
   assert.equal(contractResult.items[0].contractManufacturer, "(주)바스칸바이오제약");
   assert.equal(contractResult.totalPages, 1);
 
