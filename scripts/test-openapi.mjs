@@ -139,11 +139,14 @@ try {
   assert.match(mfdsSource, /const\s+nativeTotalPages\s*=\s*firstPage\.parsed\.total/);
   assert.match(mfdsSource, /const\s+scannedTotalPages\s*=\s*nativeTotalPages/);
   assert.match(mfdsSource, /defaultScanPages\s*=\s*nativeTotalPages\s*<=\s*12\s*\?\s*nativeTotalPages\s*:\s*3/);
+  assert.match(mfdsSource, /const\s+canFullyScanCandidates\s*=\s*nativeTotalPages\s*<=\s*12/);
+  assert.match(mfdsSource, /Math\.max\(defaultScanPages,\s*requestedScanPages\s*\|\|\s*0,\s*page\)/);
 
   const appSource = fs.readFileSync(new URL("../app.js", import.meta.url), "utf8");
   assert.doesNotMatch(appSource, /maybeAutoLoadHumanResults/);
   assert.match(appSource, /검색 조건을 입력하고 검색 버튼을 눌러주세요/);
-  assert.match(appSource, /contractCandidateLimit",\s*"15"/);
+  assert.doesNotMatch(appSource, /contractScanPages",\s*"1"/);
+  assert.doesNotMatch(appSource, /contractCandidateLimit",\s*"15"/);
   assert.match(mfdsSource, /sort:\s*requestedSort\s*\|\|\s*"ITEM_PERMIT_DATE"/);
 } finally {
   global.fetch = originalFetch;

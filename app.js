@@ -805,8 +805,6 @@ function buildSearchParams() {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "0");
-    params.set("contractScanPages", "1");
-    params.set("contractCandidateLimit", "15");
     params.set("contractBudgetMs", "8000");
     params.set("detailTimeoutMs", "3000");
     params.set("detailRetries", "1");
@@ -914,8 +912,6 @@ function compactParams(values, filters, page) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "0");
-    params.set("contractScanPages", "1");
-    params.set("contractCandidateLimit", "15");
     params.set("contractBudgetMs", "8000");
     params.set("detailTimeoutMs", "3000");
     params.set("detailRetries", "1");
@@ -935,8 +931,6 @@ function buildGroupParams(page = 1) {
   params.set("fastFail", "0");
   params.set("presenceScanPages", "10");
   params.set("detailCandidateLimit", "120");
-  params.set("contractScanPages", "1");
-  params.set("contractCandidateLimit", "15");
   params.set("contractBudgetMs", "8000");
   params.set("detailTimeoutMs", "3000");
   params.set("detailRetries", "1");
