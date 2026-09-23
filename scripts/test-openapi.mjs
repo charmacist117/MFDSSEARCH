@@ -19,7 +19,7 @@ function jsonResponse(payload, status = 200) {
   };
 }
 
-function searchHtml({ itemSeq = "202600001", itemName = "대체시험정", entpName = "시험제약" } = {}) {
+function searchHtml({ itemSeq = "202600001", itemName = "대체시험정", entpName = "시험제약", total = 1 } = {}) {
   const cells = Array.from({ length: 26 }, () => "");
   cells[0] = "1";
   cells[1] = `<a href="/pbp/CCBBB01/getItemDetail?itemSeq=${itemSeq}">${itemName}</a>`;
@@ -29,7 +29,7 @@ function searchHtml({ itemSeq = "202600001", itemName = "대체시험정", entpN
   cells[9] = "정상";
   cells[11] = "시험성분(100밀리그램)";
   cells[17] = "일반의약품";
-  return `<div title="총 1 건"></div><table><tbody><tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr></tbody></table>`;
+  return `<div title="총 ${total} 건"></div><table><tbody><tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr></tbody></table>`;
 }
 
 function detailHtml(contractManufacturer = "") {
@@ -153,6 +153,31 @@ try {
   assert.equal(contractResult.incomplete, false);
   assert.equal(contractResult.items[0].contractManufacturer, "(주)바스칸바이오제약");
   assert.equal(contractResult.totalPages, 1);
+
+  global.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes("nedrug.mfds.go.kr/searchDrug")) {
+      const sourcePage = Number(new URL(target).searchParams.get("page") || 1);
+      return { ok: true, status: 200, url: target, text: async () => searchHtml({
+        itemSeq: String(200001710 + sourcePage), itemName: sourcePage === 3 ? "세티진정" : `다른제품${sourcePage}`, total: 3
+      }) };
+    }
+    if (target.includes("getItemDetail?itemSeq=")) {
+      const manufacturer = target.endsWith("200001713") ? "(주)바스칸바이오제약" : "다른제약";
+      return { ok: true, status: 200, url: target, text: async () => detailHtml(manufacturer) };
+    }
+    return jsonResponse({ error: "not found" }, 404);
+  };
+  const batches = [];
+  for (let sourcePage = 1; sourcePage <= 3; sourcePage += 1) {
+    batches.push(await searchMfds({
+      ingredient1: "세티리진", contractManufacturer: "바스칸바이오", contractBatchPage: String(sourcePage), page: "1"
+    }));
+  }
+  assert.deepEqual(batches.map((batch) => batch.sourceTotalPages), [3, 3, 3]);
+  assert.deepEqual(batches.map((batch) => batch.total), [0, 0, 1]);
+  assert.equal(batches[2].items[0].itemSeq, "200001713");
+  assert.equal(batches[2].incomplete, false);
 
   const mfdsSource = fs.readFileSync(new URL("../lib/mfds.js", import.meta.url), "utf8");
   assert.match(mfdsSource, /const\s+nativeTotalPages\s*=\s*firstPage\.parsed\.total/);

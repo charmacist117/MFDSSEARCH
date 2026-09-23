@@ -755,6 +755,77 @@ async function requestHumanSearch(params) {
   return response.json();
 }
 
+const contractSearchCache = new Map();
+
+async function requestCompleteContractSearch(params, { refresh = false, onProgress = () => {}, isCurrent = () => true } = {}) {
+  if (!params.get("contractManufacturer") || ["#", "$"].includes(params.get("contractManufacturer")?.trim())) {
+    return normalizeHumanSearchPayload(await requestHumanSearch(params), params);
+  }
+  const page = Math.max(Number(params.get("page") || 1), 1);
+  const keyParams = new URLSearchParams(params);
+  keyParams.delete("page");
+  const cacheKey = keyParams.toString();
+  if (refresh) contractSearchCache.delete(cacheKey);
+  let result = contractSearchCache.get(cacheKey);
+  if (!result) {
+    const rows = [];
+    const notices = [];
+    let incomplete = false;
+    let pageSize = 15;
+    let sourceTotalPages = 1;
+    for (let sourcePage = 1; sourcePage <= sourceTotalPages; sourcePage += 1) {
+      if (!isCurrent()) return null;
+      const batchParams = new URLSearchParams(params);
+      batchParams.set("page", "1");
+      batchParams.set("contractBatchPage", String(sourcePage));
+      let payload;
+      try {
+        payload = await requestHumanSearch(batchParams);
+      } catch {
+        batchParams.set("contractBatchRetry", "1");
+        payload = await requestHumanSearch(batchParams);
+      }
+      if (payload.incomplete && !batchParams.has("contractBatchRetry")) {
+        const firstMatches = payload.items || [];
+        batchParams.set("contractBatchRetry", "1");
+        payload = await requestHumanSearch(batchParams);
+        const matchesBySeq = new Map([...firstMatches, ...(payload.items || [])].map((item) => [item.itemSeq, item]));
+        payload.items = [...matchesBySeq.values()];
+      }
+      if (!isCurrent()) return null;
+      sourceTotalPages = Math.max(Number(payload.sourceTotalPages || 1), 1);
+      // ponytail: an unindexed contract-only search can span thousands of pages; narrow the query above 100.
+      if (sourceTotalPages > 100) {
+        throw new Error(`원본 목록이 ${sourceTotalPages.toLocaleString("ko-KR")}페이지입니다. 제품명이나 성분명을 추가해 검색 범위를 좁혀주세요.`);
+      }
+      pageSize = Math.max(Number(payload.sourcePageSize || 15), 1);
+      rows.push(...(payload.items || []));
+      incomplete ||= payload.incomplete === true;
+      if (payload.incomplete) notices.push(`${sourcePage}페이지 상세정보 일부를 확인하지 못했습니다.`);
+      onProgress(sourcePage, sourceTotalPages, rows.length);
+    }
+    const seen = new Set();
+    const items = rows.filter((row) => {
+      if (!row.itemSeq || seen.has(row.itemSeq)) return false;
+      seen.add(row.itemSeq);
+      return true;
+    });
+    result = { items, pageSize, incomplete, notice: notices.join(" ") };
+    contractSearchCache.set(cacheKey, result);
+    if (contractSearchCache.size > 8) contractSearchCache.delete(contractSearchCache.keys().next().value);
+  }
+  const start = (page - 1) * result.pageSize;
+  return {
+    page,
+    pageSize: result.pageSize,
+    total: result.items.length,
+    totalPages: Math.max(Math.ceil(result.items.length / result.pageSize), 1),
+    items: result.items.slice(start, start + result.pageSize),
+    incomplete: result.incomplete,
+    notice: result.incomplete ? result.notice : "위탁제조업체 조건으로 원본 목록 전체의 상세정보를 확인했습니다."
+  };
+}
+
 async function normalizeHumanSearchPayload(payload, params) {
   const mode = String(params.get("exportOnlyMode") || "").toLowerCase();
   let normalized = applyClientExportOnlyMode(payload, mode);
@@ -1660,7 +1731,13 @@ async function loadGroupDashboard() {
 
   try {
     const firstParams = buildGroupParams(1);
-    const firstPayload = await normalizeHumanSearchPayload(await requestHumanSearch(firstParams), firstParams);
+    const firstPayload = await requestCompleteContractSearch(firstParams, {
+      refresh: true,
+      onProgress: (current, total, matches) => {
+        groupState.progress = `위탁제조업체 상세정보 확인 중 (${current} / ${total} 원본 페이지 · 현재 ${matches}건)`;
+        renderGroupDashboard();
+      }
+    });
     const totalPages = Math.max(Number(firstPayload.totalPages || 1), 1);
     const allRows = [...(firstPayload.items || [])];
 
@@ -1668,7 +1745,7 @@ async function loadGroupDashboard() {
       groupState.progress = `검색 결과 목록을 수집하는 중입니다. (${page} / ${totalPages} 페이지)`;
       renderGroupDashboard();
       const params = buildGroupParams(page);
-      const payload = await normalizeHumanSearchPayload(await requestHumanSearch(params), params);
+      const payload = await requestCompleteContractSearch(params);
       allRows.push(...(payload.items || []));
       await wait(80);
     }
@@ -3415,7 +3492,16 @@ async function loadCompareResults(slotId, { resetPage = false } = {}) {
 
   try {
     const params = compactParams(slot.query, slot.filters, slot.page);
-    const payload = await normalizeHumanSearchPayload(await requestHumanSearch(params), params);
+    const generation = slot.detailHydrationGeneration;
+    const payload = await requestCompleteContractSearch(params, {
+      refresh: resetPage,
+      isCurrent: () => slot.detailHydrationGeneration === generation,
+      onProgress: (current, total, matches) => {
+        slot.notice = `위탁제조업체 상세정보 확인 중 (${current} / ${total} 원본 페이지 · 현재 ${matches}건)`;
+        renderCompareSlots();
+      }
+    });
+    if (!payload) return;
     slot.rows = payload.items || [];
     slot.total = Number(payload.total || 0);
     slot.notice = payload.notice || "";
@@ -3470,13 +3556,23 @@ async function loadResults({ resetPage = false } = {}) {
   if (resetPage) state.page = 1;
   state.listLoading = true;
   state.error = "";
+  state.notice = form.elements.contractManufacturer?.value?.trim() ? "위탁제조업체 상세정보 확인 중" : "";
   state.unitDoseLoading = false;
   preloadGeneration += 1;
   render();
 
   try {
     const params = buildSearchParams();
-    const payload = await normalizeHumanSearchPayload(await requestHumanSearch(params), params);
+    const generation = preloadGeneration;
+    const payload = await requestCompleteContractSearch(params, {
+      refresh: resetPage,
+      isCurrent: () => preloadGeneration === generation,
+      onProgress: (current, total, matches) => {
+        state.notice = `위탁제조업체 상세정보 확인 중 (${current} / ${total} 원본 페이지 · 현재 ${matches}건)`;
+        render();
+      }
+    });
+    if (!payload) return;
 
     state.rows = payload.items || [];
     state.total = Number(payload.total || 0);
@@ -3794,7 +3890,7 @@ function renderResults() {
   nextPage.disabled = state.page >= state.totalPages || state.listLoading;
   goPage.disabled = state.listLoading;
   statusText.textContent = state.listLoading
-    ? "목록을 불러오는 중"
+    ? state.notice || "목록을 불러오는 중"
     : state.error || state.notice || (state.loaded ? "MFDS 실시간 목록" : "검색 조건 입력 대기");
 
   const perfYears = getPerformanceYears();
@@ -4327,6 +4423,7 @@ async function downloadCsvAllResults(category = "human") {
       if (statusEl) statusEl.textContent = `검색 결과 목록 수집 중... (${p} / ${totalPages} 페이지)`;
       
       let url = "";
+      let data;
       if (category === "vet") {
         const dashboard = externalDashboard("vet");
         const params = buildExternalParams(dashboard);
@@ -4340,14 +4437,16 @@ async function downloadCsvAllResults(category = "human") {
       } else {
         const params = buildSearchParams();
         params.set("page", String(p));
-        url = `/api/search?${params}`;
+        data = await requestCompleteContractSearch(params);
       }
 
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`목록 조회 실패 (페이지: ${p}, 코드: ${response.status})`);
+      if (url) {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`목록 조회 실패 (페이지: ${p}, 코드: ${response.status})`);
+        }
+        data = await response.json();
       }
-      const data = await response.json();
       const items = data.items || [];
       allItems.push(...items);
       
