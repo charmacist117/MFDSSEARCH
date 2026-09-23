@@ -32,6 +32,10 @@ function searchHtml({ itemSeq = "202600001", itemName = "대체시험정", entpN
   return `<div title="총 1 건"></div><table><tbody><tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr></tbody></table>`;
 }
 
+function detailHtml(contractManufacturer = "") {
+  return `<div id="scroll_01"><dl><dt>제품명</dt><dd>세티진정</dd><dt>위탁제조업체</dt><dd>${contractManufacturer}</dd></dl></div><div id="scroll_02"></div>`;
+}
+
 const originalKey = process.env.MFDS_OPENAPI_SERVICE_KEY;
 const originalFallbackKey = process.env.DATA_GO_KR_SERVICE_KEY;
 const originalFetch = global.fetch;
@@ -97,7 +101,7 @@ try {
     if (target.includes("apis.data.go.kr")) return jsonResponse(apiPayload);
     throw new Error(`Unexpected URL: ${target}`);
   };
-  const { searchMfds } = require("../lib/mfds.js");
+  const { parseDetailHtml, searchMfds } = require("../lib/mfds.js");
   const integratedApiResult = await searchMfds({ productName: "오픈에이피아이", page: "1" });
   assert.equal(integratedApiResult.dataSource, "mfds-openapi");
   assert.equal(integratedApiResult.openApiAttempted, true);
@@ -122,8 +126,20 @@ try {
   assert.match(fallbackResult.notice, /자동 전환/);
   assert.equal(fallbackResult.items[0].itemName, "대체시험정");
 
+  assert.equal(parseDetailHtml(detailHtml("(주)바스칸바이오제약")).contractManufacturer, "(주)바스칸바이오제약");
+  global.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes("nedrug.mfds.go.kr/searchDrug")) {
+      return { ok: true, status: 200, url: target, text: async () => searchHtml({ itemSeq: "200001713", itemName: "세티진정" }) };
+    }
+    if (target.includes("getItemDetail?itemSeq=200001713")) {
+      return { ok: true, status: 200, url: target, text: async () => detailHtml("(주)바스칸바이오제약") };
+    }
+    return jsonResponse({ error: "not found" }, 404);
+  };
   const contractResult = await searchMfds({
-    contractManufacturer: "위탁사",
+    productName: "세티진",
+    contractManufacturer: "바스칸바이오",
     page: "1",
     retries: "1",
     contractScanPages: "1",
@@ -133,6 +149,8 @@ try {
     detailFallback: "0"
   });
   assert.equal(contractResult.dataSource, "nedrug");
+  assert.equal(contractResult.total, 1);
+  assert.equal(contractResult.items[0].contractManufacturer, "(주)바스칸바이오제약");
   assert.equal(contractResult.totalPages, 1);
 
   const mfdsSource = fs.readFileSync(new URL("../lib/mfds.js", import.meta.url), "utf8");
