@@ -758,7 +758,7 @@ async function requestHumanSearch(params) {
 const contractSearchCache = new Map();
 
 async function requestCompleteContractSearch(params, { refresh = false, onProgress = () => {}, isCurrent = () => true } = {}) {
-  if (!params.get("contractManufacturer") || ["#", "$"].includes(params.get("contractManufacturer")?.trim())) {
+  if (!params.get("contractManufacturer") && !params.get("packageInfo")) {
     return normalizeHumanSearchPayload(await requestHumanSearch(params), params);
   }
   const page = Math.max(Number(params.get("page") || 1), 1);
@@ -822,7 +822,7 @@ async function requestCompleteContractSearch(params, { refresh = false, onProgre
     totalPages: Math.max(Math.ceil(result.items.length / result.pageSize), 1),
     items: result.items.slice(start, start + result.pageSize),
     incomplete: result.incomplete,
-    notice: result.incomplete ? result.notice : "위탁제조업체 조건으로 원본 목록 전체의 상세정보를 확인했습니다."
+    notice: result.incomplete ? result.notice : "상세정보 조건으로 원본 목록 전체를 확인했습니다."
   };
 }
 
@@ -873,7 +873,7 @@ function buildSearchParams() {
     params.set("detailTimeoutMs", "5000");
     params.set("detailRetries", "1");
     params.set("detailConcurrency", "4");
-  } else if (params.get("contractManufacturer") || params.get("reviewType")) {
+  } else if (params.get("contractManufacturer") || params.get("packageInfo") || params.get("reviewType")) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "0");
@@ -980,7 +980,7 @@ function compactParams(values, filters, page) {
     params.set("detailTimeoutMs", "5000");
     params.set("detailRetries", "1");
     params.set("detailConcurrency", "4");
-  } else if (params.get("contractManufacturer") || params.get("reviewType")) {
+  } else if (params.get("contractManufacturer") || params.get("packageInfo") || params.get("reviewType")) {
     params.set("timeoutMs", "6500");
     params.set("retries", "1");
     params.set("fastFail", "0");
@@ -2805,6 +2805,7 @@ function renderCompareForm(slot) {
       ${compareInput(slot, "업체명", "companyName")}
       ${compareInput(slot, "업체영문명", "companyEngName")}
       ${compareInput(slot, "위탁제조업체", "contractManufacturer")}
+      ${compareInput(slot, "포장정보", "packageInfo")}
       ${compareReviewTypeSelect(slot)}
       ${compareExportOnlyMode(slot)}
       ${compareInput(slot, "성분명1", "ingredient1")}
@@ -3497,7 +3498,7 @@ async function loadCompareResults(slotId, { resetPage = false } = {}) {
       refresh: resetPage,
       isCurrent: () => slot.detailHydrationGeneration === generation,
       onProgress: (current, total, matches) => {
-        slot.notice = `위탁제조업체 상세정보 확인 중 (${current} / ${total} 원본 페이지 · 현재 ${matches}건)`;
+        slot.notice = `상세정보 확인 중 (${current} / ${total} 원본 페이지 · 현재 ${matches}건)`;
         renderCompareSlots();
       }
     });
@@ -3556,7 +3557,7 @@ async function loadResults({ resetPage = false } = {}) {
   if (resetPage) state.page = 1;
   state.listLoading = true;
   state.error = "";
-  state.notice = form.elements.contractManufacturer?.value?.trim() ? "위탁제조업체 상세정보 확인 중" : "";
+  state.notice = form.elements.contractManufacturer?.value?.trim() || form.elements.packageInfo?.value?.trim() ? "상세정보 확인 중" : "";
   state.unitDoseLoading = false;
   preloadGeneration += 1;
   render();
@@ -3568,7 +3569,7 @@ async function loadResults({ resetPage = false } = {}) {
       refresh: resetPage,
       isCurrent: () => preloadGeneration === generation,
       onProgress: (current, total, matches) => {
-        state.notice = `위탁제조업체 상세정보 확인 중 (${current} / ${total} 원본 페이지 · 현재 ${matches}건)`;
+        state.notice = `상세정보 확인 중 (${current} / ${total} 원본 페이지 · 현재 ${matches}건)`;
         render();
       }
     });
