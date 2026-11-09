@@ -5,9 +5,9 @@ const require = createRequire(import.meta.url);
 const { searchMfds } = require("../lib/mfds.js");
 
 const products = [
-  { seq: "299900001", name: "첫번째정", contract: "", packageInfo: "110정/상자" },
-  { seq: "299900002", name: "두번째정", contract: "초당약품공업(주)", packageInfo: "10정/상자" },
-  { seq: "299900003", name: "세번째캡슐", contract: "초당약품공업(주)", packageInfo: "10캡슐/상자" }
+  { seq: "299900001", name: "일반캡슐제", contract: "", packageInfo: "110정/상자" },
+  { seq: "299900002", name: "연질캡슐제", contract: "초당약품공업(주)", packageInfo: "10정/상자" },
+  { seq: "299900003", name: "다른캡슐제", contract: "초당약품공업(주)", packageInfo: "10캡슐/상자" }
 ];
 
 const originalFetch = globalThis.fetch;
@@ -25,7 +25,7 @@ globalThis.fetch = async (input) => {
 };
 
 try {
-  const base = { productName: "정", contractBatchPage: "1" };
+  const base = { productName: "캡슐제", contractBatchPage: "1" };
   const contractFirst = await searchMfds({ ...base, contractManufacturer: "#" });
   const contractSecond = await searchMfds({ ...base, contractManufacturer: "#", contractBatchPage: "2" });
   assert.deepEqual(contractFirst.items.map((item) => item.itemSeq), ["299900002"]);
@@ -39,6 +39,13 @@ try {
   assert.deepEqual(combined.items.map((item) => item.itemSeq), ["299900002"]);
   const capsules = await searchMfds({ ...base, packageInfo: "10캡슐", contractBatchPage: "2" });
   assert.deepEqual(capsules.items.map((item) => item.itemSeq), ["299900003"]);
+  const excludedFirst = await searchMfds({ ...base, excludeProductName: "연질" });
+  const excludedSecond = await searchMfds({ ...base, excludeProductName: "연질", contractBatchPage: "2" });
+  assert.deepEqual(excludedFirst.items.map((item) => item.itemSeq), ["299900001"]);
+  assert.deepEqual(excludedSecond.items.map((item) => item.itemSeq), ["299900003"]);
+  assert.equal(excludedFirst.incomplete, false);
+  const excludedWithContract = await searchMfds({ ...base, contractManufacturer: "초당", excludeProductName: "연질" });
+  assert.deepEqual(excludedWithContract.items.map((item) => item.itemSeq), []);
   console.log("Detail search batch and package filters passed.");
 } finally {
   globalThis.fetch = originalFetch;

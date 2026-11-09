@@ -758,7 +758,7 @@ async function requestHumanSearch(params) {
 const contractSearchCache = new Map();
 
 async function requestCompleteContractSearch(params, { refresh = false, onProgress = () => {}, isCurrent = () => true } = {}) {
-  if (!params.get("contractManufacturer") && !params.get("packageInfo")) {
+  if (!params.get("contractManufacturer") && !params.get("packageInfo") && !params.get("excludeProductName")) {
     return normalizeHumanSearchPayload(await requestHumanSearch(params), params);
   }
   const page = Math.max(Number(params.get("page") || 1), 1);
@@ -794,8 +794,8 @@ async function requestCompleteContractSearch(params, { refresh = false, onProgre
       }
       if (!isCurrent()) return null;
       sourceTotalPages = Math.max(Number(payload.sourceTotalPages || 1), 1);
-      // ponytail: an unindexed contract-only search can span thousands of pages; narrow the query above 100.
-      if (sourceTotalPages > 100) {
+      // shortcut: broad text exclusions still require a bounded full scan; narrow the inclusion query above this limit.
+      if (sourceTotalPages > (params.get("excludeProductName") ? 1000 : 100)) {
         throw new Error(`원본 목록이 ${sourceTotalPages.toLocaleString("ko-KR")}페이지입니다. 제품명이나 성분명을 추가해 검색 범위를 좁혀주세요.`);
       }
       pageSize = Math.max(Number(payload.sourcePageSize || 15), 1);
@@ -822,7 +822,7 @@ async function requestCompleteContractSearch(params, { refresh = false, onProgre
     totalPages: Math.max(Math.ceil(result.items.length / result.pageSize), 1),
     items: result.items.slice(start, start + result.pageSize),
     incomplete: result.incomplete,
-    notice: result.incomplete ? result.notice : "상세정보 조건으로 원본 목록 전체를 확인했습니다."
+    notice: result.incomplete ? result.notice : "검색 조건으로 원본 목록 전체를 확인했습니다."
   };
 }
 
@@ -3557,7 +3557,7 @@ async function loadResults({ resetPage = false } = {}) {
   if (resetPage) state.page = 1;
   state.listLoading = true;
   state.error = "";
-  state.notice = form.elements.contractManufacturer?.value?.trim() || form.elements.packageInfo?.value?.trim() ? "상세정보 확인 중" : "";
+  state.notice = form.elements.contractManufacturer?.value?.trim() || form.elements.packageInfo?.value?.trim() || form.elements.excludeProductName?.value?.trim() ? "검색 결과 확인 중" : "";
   state.unitDoseLoading = false;
   preloadGeneration += 1;
   render();
@@ -3569,7 +3569,7 @@ async function loadResults({ resetPage = false } = {}) {
       refresh: resetPage,
       isCurrent: () => preloadGeneration === generation,
       onProgress: (current, total, matches) => {
-        state.notice = `상세정보 확인 중 (${current} / ${total} 원본 페이지 · 현재 ${matches}건)`;
+        state.notice = `검색 결과 확인 중 (${current} / ${total} 원본 페이지 · 현재 ${matches}건)`;
         render();
       }
     });
